@@ -10,3 +10,16 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# a dir with some test VMs that I definitely don't want to commit
+.testvm
+
+# some sample facts that I don't want to commit
+facts/
+
+# binaries
+main
+govern
+
+# editor files
+**.code-workspace
