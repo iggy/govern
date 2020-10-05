@@ -14,8 +14,8 @@
 # a dir with some test VMs that I definitely don't want to commit
 .testvm
 
-# some sample facts that I don't want to commit
-facts/
+# some sample laws that I don't want to commit
+/laws/
 
 # binaries
 main
