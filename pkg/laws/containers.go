@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2021 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,9 +33,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	docker "github.com/fsouza/go-dockerclient"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -75,27 +74,27 @@ type Container struct {
 func (c *Container) IsRunning() (bool, error) {
 	log.Trace().Msg("Container.Running()")
 
-	docker, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	ctx := context.Background()
+
+	client, err := docker.NewClientFromEnv()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create docker client")
-		return false, err
-	}
-	log.Trace().Msgf("Docker Client Version: %s", docker.ClientVersion())
-	lFilters := filters.NewArgs(filters.Arg("name", c.Name))
-	lOpts := types.ContainerListOptions{Filters: lFilters}
-	hostContainers, err := docker.ContainerList(context.Background(), lOpts)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to list docker containers")
-		return false, err
+		log.Fatal().Err(err).Msg("failed to create docker client")
 	}
 
-	log.Trace().Interface("cntr", c).Msgf("")
-	log.Trace().Interface("hcs", hostContainers).Msgf("")
-	// We are filtering by name above, so we should only get one (or 0) results,
-	// but we still have to loop over the results
-	for _, hc := range hostContainers {
-		log.Trace().Interface("container", hc).Msgf("%s %s\n", hc.ID[:10], hc.Image)
-		if c.Name == strings.TrimLeft(hc.Names[0], "/") && hc.State == "running" {
+	lOpts := docker.ListContainersOptions{
+		Limit:   1,
+		Context: ctx,
+		Filters: map[string][]string{
+			"name": {c.Name},
+		},
+	}
+	l, err := client.ListContainers(lOpts)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get container list")
+	}
+	for _, cList := range l {
+		log.Trace().Interface("container", cList).Msg("container")
+		if c.Name == strings.TrimLeft(cList.Names[0], "/") && cList.State == "running" {
 			log.Debug().Msgf("Container running: %s", c.Name)
 			return true, nil
 		}
