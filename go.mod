@@ -11,7 +11,7 @@ require (
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
-	github.com/rs/zerolog v1.21.0
+	github.com/rs/zerolog v1.22.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
