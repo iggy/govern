@@ -51,6 +51,7 @@ Use this to see the facts you can reference in the laws yaml templates.
 		log.Trace().Msg("facts called")
 
 		w := tabwriter.NewWriter(os.Stdout, 1, 4, 4, ' ', 0)
+		fmt.Fprintf(w, "hostname:\t%s\n", facts.Facts.Hostname)
 		fmt.Fprintf(w, "distro name:\t%v\n", facts.Facts.Distro.Name)
 		fmt.Fprintf(w, "distro slug:\t%v\n", facts.Facts.Distro.Slug)
 		fmt.Fprintf(w, "distro family:\t%v\n", facts.Facts.Distro.Family)

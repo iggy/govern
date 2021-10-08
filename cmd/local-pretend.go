@@ -44,7 +44,7 @@ var pretendCmd = &cobra.Command{
 	Short: "pretend an apply",
 	Long:  `Output what changes an apply would run using the given configs.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Info().Msg("pretend called")
+		log.Debug().Msg("pretend called")
 		file, _ := cmd.Flags().GetString("file")
 		directory, _ := cmd.Flags().GetString("directory")
 
