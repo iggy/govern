@@ -36,6 +36,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// TODO - other facts to add
+//   govern version
+//   other versions
+
 type facts struct {
 	Hostname    string
 	UID         int
