@@ -34,14 +34,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/rs/zerolog/log"
 )
 
 // GetSystemUUID - return/fill in the system UUID
+// TODO if we can't find one, generate our own and store it in our cache dir
 func GetSystemUUID() string {
 	// The system UUID can be in one of a few places
 	// /sys/class/dmi/id/product_uuid
@@ -55,7 +56,7 @@ func GetSystemUUID() string {
 			Facts.SystemUUID = fmt.Sprintf("error: %v", err)
 		}
 	} else {
-		Facts.SystemUUID = strings.TrimSpace(fmt.Sprintf("%s", uuid))
+		Facts.SystemUUID = strings.TrimSpace(string(uuid))
 	}
 	return Facts.SystemUUID
 }
@@ -72,16 +73,9 @@ type CPUInfoFacts struct {
 
 // GetCPUInfo - fill in CPUInfo struct
 func GetCPUInfo() {
-	// arch/machine comes from uname syscall
-	uts := syscall.Utsname{}
-	err := syscall.Uname(&uts)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to run uname syscall")
-	}
-	// fmt.Printf("uts.Machine: %d\n", uts.Machine)
-	for _, ch := range uts.Machine {
-		Facts.CPUInfo.Arch = fmt.Sprintf("%s%s", Facts.CPUInfo.Arch, string(ch))
-	}
+	// arch/machine dod come from uname syscall, but that shit is fragile
+	// don't know if this is better, but we'll try
+	Facts.CPUInfo.Arch = runtime.GOARCH
 
 	// model/cores/etc comes from /proc/cpuinfo
 	ci, err := os.Open("/proc/cpuinfo")

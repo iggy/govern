@@ -56,7 +56,7 @@ func DistroAlpine() bool {
 	Facts.Distro.Name = "Alpine"
 	Facts.Distro.Slug = "alpine"
 	Facts.Distro.Family = "alpine"
-	Facts.Distro.Version = strings.TrimSpace(fmt.Sprintf("%s", ar))
+	Facts.Distro.Version = strings.TrimSpace(string(ar))
 	// This could technically be different, but never heard of it in practice
 	Facts.Distro.InitSystem = "openrc"
 	return true
