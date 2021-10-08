@@ -67,6 +67,7 @@ type Laws struct {
 	Packages   []Package
 	Containers []Container
 	Scripts    []Script
+	Files      []File
 }
 
 // ProcessFile - process a yaml file
@@ -114,6 +115,12 @@ func ProcessFile(lawsFile string, pretend bool) error {
 	}
 	for _, cntr := range laws.Containers {
 		err = cntr.Ensure(pretend)
+		if err != nil {
+			return err
+		}
+	}
+	for _, file := range laws.Files {
+		err = file.Ensure(pretend)
 		if err != nil {
 			return err
 		}
