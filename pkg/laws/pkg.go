@@ -66,6 +66,9 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 		switch node.Value {
 		case "name":
 			pkg.Name = value.Content[i+1].Value
+			if pkg.Name == "" {
+				return nil
+			}
 		case "version":
 			pkg.Version = value.Content[i+1].Value
 		case "present":

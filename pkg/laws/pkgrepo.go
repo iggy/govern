@@ -30,6 +30,10 @@
 package laws
 
 import (
+	"fmt"
+	"strconv"
+
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,8 +45,33 @@ type PackageRepo struct {
 }
 
 func (r *PackageRepo) UnmarshalYAML(value *yaml.Node) error {
+	var err error // for use in the switch below
+
 	repo := &PackageRepo{}
 	repo.Present = true
+
+	log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
+	if value.Tag != "!!map" {
+		return fmt.Errorf("Unable to unmarshal yaml: value not map (%s)", value.Tag)
+	}
+
+	for i, node := range value.Content {
+		log.Trace().Interface("node1", node).Msg("")
+		switch node.Value {
+		case "name":
+			r.Name = value.Content[i+1].Value
+		case "gpgkey":
+			r.GPGKey = value.Content[i+1].Value
+		case "contents":
+			r.Contents = value.Content[i+1].Value
+		case "present":
+			r.Present, err = strconv.ParseBool(value.Content[i+1].Value)
+			if err != nil {
+				log.Error().Err(err).Msg("can't parse installed field")
+				return err
+			}
+		}
+	}
 
 	*r = *repo
 	return nil
