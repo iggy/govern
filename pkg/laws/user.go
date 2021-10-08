@@ -152,9 +152,9 @@ func (u *User) Create() {
 		log.Debug().Msg("on Alpine, using adduser")
 		// TODO handle optionalgroups, extragroups, system, password
 		args = append(args,
-			"-u", string(u.UID),
+			"-u", fmt.Sprintf("%d", u.UID),
 			"-s", u.Shell,
-			"-G", string(u.GID),
+			"-G", fmt.Sprintf("%d", u.GID),
 			"-D",
 			"-g", u.Fullname,
 			"-h", u.HomeDir,
