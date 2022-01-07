@@ -10,7 +10,7 @@ require (
 	github.com/containerd/cgroups v1.0.2 // indirect
 	github.com/containerd/continuity v0.2.0 // indirect
 	github.com/creack/pty v1.1.16 // indirect
-	github.com/fsouza/go-dockerclient v1.7.6
+	github.com/fsouza/go-dockerclient v1.7.7
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
