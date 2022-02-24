@@ -11,7 +11,7 @@ require (
 	github.com/containerd/continuity v0.2.0 // indirect
 	github.com/creack/pty v1.1.16 // indirect
 	github.com/docker/docker v20.10.12+incompatible // indirect
-	github.com/fsouza/go-dockerclient v1.7.8
+	github.com/fsouza/go-dockerclient v1.7.9
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
