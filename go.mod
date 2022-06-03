@@ -8,7 +8,7 @@ require (
 	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/creack/pty v1.1.16 // indirect
 	github.com/docker/docker v20.10.12+incompatible // indirect
-	github.com/fsouza/go-dockerclient v1.7.11
+	github.com/fsouza/go-dockerclient v1.8.0
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
@@ -18,5 +18,5 @@ require (
 	github.com/rs/zerolog v1.26.1
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.11.0
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.1
 )
