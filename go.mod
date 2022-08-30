@@ -15,7 +15,7 @@ require (
 	github.com/moby/sys/mount v0.3.0 // indirect
 	github.com/rogpeppe/go-internal v1.8.0 // indirect
 	github.com/rs/zerolog v1.26.1
-	github.com/spf13/cobra v1.4.0
+	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.12.0
 	gopkg.in/yaml.v3 v3.0.0
 )
