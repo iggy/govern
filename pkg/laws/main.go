@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,6 +68,8 @@ type Laws struct {
 	Containers []Container
 	Scripts    []Script
 	Files      []File
+	Mounts     []Mount
+	Services   []Service
 }
 
 // ProcessFile - process a yaml file
@@ -121,6 +123,12 @@ func ProcessFile(lawsFile string, pretend bool) error {
 	}
 	for _, file := range laws.Files {
 		err = file.Ensure(pretend)
+		if err != nil {
+			return err
+		}
+	}
+	for _, mount := range laws.Mounts {
+		err = mount.Ensure(pretend)
 		if err != nil {
 			return err
 		}

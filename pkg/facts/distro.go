@@ -97,4 +97,14 @@ func DistroUbuntu() bool {
 func init() {
 	DistroAlpine()
 	DistroUbuntu()
+	// TODO improve the detection of the init system
+	switch Facts.Distro.Family {
+	case "alpine":
+		Facts.InitSystem = "openrc"
+	case "debian":
+		Facts.InitSystem = "systemd"
+	default:
+		// :sad_corgi:
+		Facts.InitSystem = "systemd"
+	}
 }
