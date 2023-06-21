@@ -27,6 +27,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+// TODO
+//   bundle installs together into one package manager call
+//
+
 package laws
 
 import (
@@ -58,7 +62,7 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 
 	log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
 	if value.Tag != "!!map" {
-		return fmt.Errorf("Unable to unmarshal yaml: value not map (%s)", value.Tag)
+		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
 
 	for i, node := range value.Content {
@@ -91,7 +95,8 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 func (p *Package) IsInstalled() (bool, error) {
 	log.Trace().Interface("Package", p).Msg("pkgInstalled")
 	log.Trace().Interface("Facts", facts.Facts).Msg("what are the facts?")
-	if facts.Facts.Distro.Family == "alpine" {
+	switch facts.Facts.Distro.Family {
+	case "alpine":
 		cmd := exec.Command("apk", "policy", p.Name)
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -113,11 +118,26 @@ func (p *Package) IsInstalled() (bool, error) {
 			return true, nil
 		}
 		return false, nil
+	case "debian":
+		cmd := exec.Command("dpkg-query", "-W", "-f", "${Version}", p.Name)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		err := cmd.Run()
+		if err != nil {
+			log.Warn().Err(err).Str("package", p.Name).Msg("Failed to Cmd.run dpkg-query")
+		} else {
+			stdOut := out.String()
+			log.Debug().Str("stdout", stdOut).Msg("dpkg-query stdout")
+
+			return true, nil
+		}
+		return false, nil
+	default:
+		return false, fmt.Errorf("unknown distro")
 	}
-	return false, fmt.Errorf("Unknown distro")
 }
 
-func (p *Package) Install() (version string, err error) {
+func (p *Package) Install() (string, error) {
 	switch facts.Facts.Distro.Family {
 	case "alpine":
 		// setting versions on alpine is probably not something most people will be into
@@ -137,6 +157,18 @@ func (p *Package) Install() (version string, err error) {
 		// TODO set version for return
 	case "debian":
 		log.Debug().Msgf("Installing on debian/ubuntu: %s (%s)", p.Name, p.Version)
+		cmd := exec.Command("apt-get", "install", "-y", p.Name)
+		var out bytes.Buffer
+		var errOut bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &errOut
+		err := cmd.Run()
+		stdOut := out.String()
+		stdErr := errOut.String()
+		if err != nil {
+			log.Fatal().Err(err).Str("stdout", stdOut).Str("stderr", stdErr).Msg("Failed to cmd.Run apt-get install")
+		}
+		log.Debug().Str("stdout", stdOut).Msg("stdout")
 
 	default:
 		log.Info().Msgf("Don't know how to install packages on distro: %s", facts.Facts.Distro.Family)

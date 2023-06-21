@@ -45,9 +45,9 @@ var applyCmd = &cobra.Command{
 local directory.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Info().Msg("apply called")
 		file, _ := cmd.Flags().GetString("file")
 		directory, _ := cmd.Flags().GetString("directory")
+		log.Info().Str("file", file).Str("dir", directory).Msg("applying config")
 
 		if file != "" {
 			err := laws.ProcessFile(file, false)

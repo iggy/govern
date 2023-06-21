@@ -83,7 +83,7 @@ func (c *Container) UnmarshalYAML(value *yaml.Node) error {
 
 	log.Trace().Interface("Node", value).Interface("node type", value.Content).Msg("UnmarshalYAML")
 	if value.Tag != "!!map" {
-		return fmt.Errorf("Unable to unmarshal yaml: value not map (%s)", value.Tag)
+		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
 
 	for i, node := range value.Content {

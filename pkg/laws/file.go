@@ -1,4 +1,5 @@
-// Copyright © 2021 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,27 +31,27 @@
 package laws
 
 import (
-	// "gopkg.in/yaml.v3"
-
 	"io/fs"
 	"io/ioutil"
 	"os"
 
+	// "gopkg.in/yaml.v3"
 	"github.com/rs/zerolog/log"
 )
 
 type File struct {
-	Path  string
-	User  string
-	Group string
-	Mode  fs.FileMode
-	Text  string
+	Path   string
+	User   string
+	Group  string
+	Mode   fs.FileMode
+	Text   string
+	Backup bool
 }
 
 // func (f *File) UnmarshalYAML(value *yaml.Node) error {
-// 	log.Trace().Msg("file unmarshall yaml")
+//     log.Trace().Msg("file unmarshall yaml")
 
-// 	return nil
+//     return nil
 // }
 
 func (f *File) Ensure(pretend bool) error {
@@ -63,14 +64,30 @@ func (f *File) Ensure(pretend bool) error {
 			log.Debug().Msg("file doesn't exist, would create")
 		}
 	} else {
-		// if !f.Exists() {
-		// we just always write the file, opening -> checking -> possibly writing is often slower than just writing
+		// TODO make sure we aren't overwriting an existing file
+		if f.Backup && f.Exists() {
+			log.Trace().Msg("backing up file before writing")
+			err := os.Rename(f.Path, f.Path+".bak")
+			if err != nil {
+				log.Error().Err(err).Interface("file", f).Msg("failed to backup file")
+			}
+		}
+		if !f.Exists() {
+			// we just always write the file, opening -< checking -> possibly writing is often slower than just writing
+			err := ioutil.WriteFile(f.Path, []byte(f.Text), f.Mode)
+			if err != nil {
+				log.Error().Err(err).Interface("File", f).Msg("failed to write file")
+			}
+		} else {
+			log.Trace().Msg("updating file to match")
+		}
+		// ->checking -> possibly writing is often slower than just writing
 		err := ioutil.WriteFile(f.Path, []byte(f.Text), f.Mode)
 		if err != nil {
 			log.Error().Err(err).Interface("File", f).Msg("failed to write file")
 		}
 		// } else {
-		// 	log.Trace().Msg("updating file to match")
+		//  	log.Trace().Msg("updating file to match")
 		// }
 	}
 
