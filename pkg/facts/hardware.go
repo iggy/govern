@@ -99,15 +99,13 @@ func GetCPUInfo() {
 				}
 
 			}
+			// https://github.com/util-linux/util-linux/blob/master/sys-utils/lscpu-arm.c
 			// vendor ID for arm (ish)
 			if strings.HasPrefix(line, "CPU implementor") {
 				ci := fmt.Sprint(strings.TrimSpace(strings.Split(line, ":")[1]))
 				switch ci {
 				case "0x41":
-					// not sure about this
-					// https://github.com/karelzak/util-linux/pull/564/files
-					// says 0x41 is just "arm", but my NAS says realtek
-					Facts.CPUInfo.Vendor = "realtek"
+					Facts.CPUInfo.Vendor = "arm"
 				case "0x42":
 					Facts.CPUInfo.Vendor = "broadcom"
 				case "0x43":
@@ -115,6 +113,15 @@ func GetCPUInfo() {
 
 				}
 
+			}
+			if strings.HasPrefix(line, "CPU part") {
+				ci := fmt.Sprint(strings.TrimSpace(strings.Split(line, ":")[1]))
+				switch ci {
+				case "0xd0b":
+					Facts.CPUInfo.Model = "Cortex-A76"
+				case "0xd05":
+					Facts.CPUInfo.Model = "Cortex-A55"
+				}
 			}
 
 			if strings.HasPrefix(line, "model name") {

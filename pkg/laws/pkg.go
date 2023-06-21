@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -26,6 +26,10 @@
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
+
+// TODO
+//   bundle installs together into one package manager call
+//
 
 // TODO
 //   bundle installs together into one package manager call
@@ -97,12 +101,15 @@ func (p *Package) IsInstalled() (bool, error) {
 	log.Trace().Interface("Facts", facts.Facts).Msg("what are the facts?")
 	switch facts.Facts.Distro.Family {
 	case "alpine":
-		cmd := exec.Command("apk", "policy", p.Name)
+		cmd := exec.Command("apk", "info", "-e", p.Name)
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		err := cmd.Run()
+		if cmd.ProcessState.ExitCode() == 1 {
+			return false, nil
+		}
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to Cmd.run apk policy")
+			log.Debug().Err(err).Msg("Failed to get package installed status from apk")
 		}
 		stdOut := out.String()
 		log.Debug().Str("stdout", stdOut).Msg("stdout")

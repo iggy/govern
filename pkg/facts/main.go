@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -52,6 +52,7 @@ type facts struct {
 	Environ     []string
 	SystemUUID  string
 	MemoryTotal uint64
+	InitSystem  string
 	CPUInfo     CPUInfoFacts
 	Distro      DistroFacts
 	Network     NetworkFacts
