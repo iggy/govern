@@ -125,5 +125,11 @@ func ProcessFile(lawsFile string, pretend bool) error {
 			return err
 		}
 	}
+	for _, script := range laws.Scripts {
+		err = script.Run(pretend)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
