@@ -64,7 +64,7 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 	pkg.Present = true // present gets set to true because they wouldn't mention it otherwise
 	var err error      // for use in the switch below
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("Pkg UnmarshalYAML")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
@@ -94,6 +94,7 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// IsInstalled - check if a package is installed
 // true/false whether a package is installed
 // err = nil if we know what distro we are on
 func (p *Package) IsInstalled() (bool, error) {
@@ -118,9 +119,10 @@ func (p *Package) IsInstalled() (bool, error) {
 			if p.Version != "" {
 				if strings.Contains(stdOut, p.Version) {
 					return true, nil
-				} else {
-					return false, nil
 				}
+
+				return false, nil
+
 			}
 			return true, nil
 		}
@@ -144,6 +146,7 @@ func (p *Package) IsInstalled() (bool, error) {
 	}
 }
 
+// Install - install a package
 func (p *Package) Install() (string, error) {
 	switch facts.Facts.Distro.Family {
 	case "alpine":
@@ -183,6 +186,7 @@ func (p *Package) Install() (string, error) {
 	return "", nil
 }
 
+// Ensure - ensure a package is installed
 func (p *Package) Ensure(pretend bool) {
 	installed, err := p.IsInstalled()
 	if err != nil {

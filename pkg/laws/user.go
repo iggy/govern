@@ -26,6 +26,8 @@
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
+
+// Package laws - Laws describe the state of the system
 package laws
 
 import (
@@ -56,7 +58,7 @@ type User struct {
 	Exists         bool     ``                       // Whether the user should exist on the system or not
 	ExtraGroups    []string ``                       // required extra group names
 	OptionalGroups []string `yaml:"optional_groups"` // if these groups exist already, add the user to them, otherwise ignore
-	CommonFields            //CommonFields `yaml:"commonfields,inline"` // fields that are supported for everything, mostly dep related
+	CommonFields            // CommonFields `yaml:"commonfields,inline"` // fields that are supported for everything, mostly dep related
 	// TODO *Groups ^ should be array and should be expanded out below
 }
 
@@ -113,6 +115,7 @@ func (u *User) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// GetPassword - Get the password for the user
 // Common internet wisdom says I should be talking to pam, but Alpine doesn't use pam
 func (u *User) GetPassword() (string, error) {
 	shadowFile, err := os.Open("/etc/shadow")
@@ -138,6 +141,7 @@ func (u *User) GetPassword() (string, error) {
 	return passwd, nil
 }
 
+// Create - create the user
 func (u *User) Create() {
 	var args []string
 	var cmd *exec.Cmd
@@ -185,6 +189,7 @@ func (u *User) Create() {
 
 }
 
+// Ensure - ensure the user exists, if not create it
 func (u *User) Ensure(pretend bool) error {
 	log.Trace().Interface("user", u).Msgf("ensuring user: %s (%d:%d)", u.Name, u.UID, u.GID)
 	eu, err := user.Lookup(u.Name)

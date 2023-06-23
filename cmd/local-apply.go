@@ -52,18 +52,18 @@ local directory.
 		if file != "" {
 			err := laws.ProcessFile(file, false)
 			if err != nil {
-				log.Fatal().Msgf("failed to process file (%s): %v\n", file, err)
+				log.Fatal().Msgf("apply: failed to process file (%s): %v\n", file, err)
 			}
 		}
 		if directory != "" {
 			files, err := filepath.Glob(filepath.Join(directory, "*"))
 			if err != nil {
-				log.Fatal().Msgf("Invalid pattern")
+				log.Fatal().Msgf("apply: Invalid pattern")
 			}
 			for _, file := range files {
 				err := laws.ProcessFile(file, false)
 				if err != nil {
-					log.Fatal().Msgf("failed to process file (%s): %v\n", file, err)
+					log.Fatal().Msgf("apply: failed to process file (%s): %v\n", file, err)
 				}
 			}
 		}

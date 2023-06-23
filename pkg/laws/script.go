@@ -45,6 +45,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Script is a script to run
 type Script struct {
 	Name       string
 	Shell      string
@@ -57,13 +58,14 @@ type Script struct {
 	CommonFields
 }
 
+// UnmarshalYAML implements the Unmarshaler interface.
 func (s *Script) UnmarshalYAML(value *yaml.Node) error {
 	s.Shell = "/bin/sh"
 	// TODO
 	//  env should match parent shell by default and then be added to
 	//
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("Script UnmarshalYAML")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
@@ -96,6 +98,7 @@ func (s *Script) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// Run - run the script
 func (s *Script) Run(pretend bool) error {
 	log.Trace().Interface("script", s).Msg("script run")
 

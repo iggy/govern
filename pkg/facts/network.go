@@ -35,6 +35,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// NetworkFacts contains facts about the network
 type NetworkFacts struct {
 	Interfaces []net.Interface
 }

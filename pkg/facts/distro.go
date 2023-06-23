@@ -38,6 +38,7 @@ import (
 	"strings"
 )
 
+// DistroFacts - holds distro information
 type DistroFacts struct {
 	Name       string
 	Slug       string

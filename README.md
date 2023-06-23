@@ -4,8 +4,8 @@ declarative idempotent golang config management and orchestration
 
 Base all the functionality naming off of "govern"ment terminology. i.e.
 
-  * LAWS - description of systems (users to create, pkgs to install, etc)
-  * FACTS - facts about systems (# of cpus, memory, distro/version, etc) = facts
+* LAWS - description of systems (users to create, pkgs to install, etc)
+* FACTS - facts about systems (# of cpus, memory, distro/version, etc) = facts
 
 I know, cute isn't it
 
@@ -27,19 +27,19 @@ i.e. what can I control on my system
 
 * Hostname
 * UID
-*	EUID
-*	GID
-*	EGID
-*	Groups
-*	PID
-*	PPID
-*	Environ
-*	SystemUUID
-*	MemoryTotal
-*	InitSystem
-*	CPUInfo
-*	Distro
-*	Network
+* EUID
+* GID
+* EGID
+* Groups
+* PID
+* PPID
+* Environ
+* SystemUUID
+* MemoryTotal
+* InitSystem
+* CPUInfo
+* Distro
+* Network
 
 ## TODO
 

@@ -49,6 +49,7 @@ type Service struct {
 	CommonFields
 }
 
+// CurrentState - get current state of service
 func (s *Service) CurrentState() string {
 	log.Debug().Str("distro family", facts.Facts.Distro.Family).Str("service", s.Name).Msg("checking service state")
 	switch facts.Facts.Distro.Family {
@@ -75,6 +76,7 @@ func (s *Service) CurrentState() string {
 	return ""
 }
 
+// Ensure - ensure service is in desired state
 func (s *Service) Ensure(pretend bool) {
 	cstate := s.CurrentState()
 	if pretend {
@@ -97,6 +99,8 @@ func (s *Service) Ensure(pretend bool) {
 						log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service start")
 					}
 					log.Debug().Str("stdout", out.String())
+				case "debian":
+
 				}
 			}
 		} else {
@@ -111,9 +115,10 @@ func (s *Service) Ensure(pretend bool) {
 				cmd.Stdout = &out
 				err := cmd.Run()
 				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service start")
+					log.Fatal().Err(err).Msg("Failed to cmd.Run rc-update add")
 				}
 				log.Debug().Str("stdout", out.String())
+			case "debian":
 			}
 
 		}

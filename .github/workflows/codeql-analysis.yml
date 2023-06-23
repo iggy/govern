@@ -6,22 +6,30 @@
 ---
 name: "CodeQL"
 
-'on':
+"on":
   pull_request:
   schedule:
-    - cron: '0 1 * * 1'
+    - cron: "0 1 * * 1"
+
+    # checkov complains about the default, we don't need more for now, but if we ever want megalinter
+# to fix things for us, we'll have to revisit
+permissions: read-all
 
 jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
     strategy:
       fail-fast: false
       matrix:
         # Override automatic language detection by changing the below list
         # Supported options are ['csharp', 'cpp', 'go', 'java', 'javascript', 'python']
-        language: ['go']
+        language: ["go"]
         # Learn more...
         # https://docs.github.com/en/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#overriding-automatic-language-detection
 
