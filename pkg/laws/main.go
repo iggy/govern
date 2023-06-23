@@ -27,6 +27,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+// Package laws - Laws describe the state of the system
 package laws
 
 import (
@@ -40,6 +41,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// RetryOpts - retry options
 type RetryOpts struct {
 	Attempts uint
 	Until    bool
@@ -47,6 +49,7 @@ type RetryOpts struct {
 	Splay    uint
 }
 
+// CommonFields - common fields for all objects
 type CommonFields struct {
 	Present  bool
 	Uses     []string

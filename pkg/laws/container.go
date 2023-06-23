@@ -40,6 +40,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// HealthCheckOpts - This is a struct for the healthcheck options
 type HealthCheckOpts struct {
 	Enabled     bool
 	Command     string
@@ -49,11 +50,13 @@ type HealthCheckOpts struct {
 	Timeout     string
 }
 
+// LogOpts - This is a struct for the log options
 type LogOpts struct {
 	Driver string // none|json-file|syslog|journald|gelf|fluentd|awslogs|splunk
 	Opt    map[string]string
 }
 
+// Container -  This is a struct for the container
 type Container struct {
 	Name          string
 	Image         string
@@ -81,7 +84,7 @@ func (c *Container) UnmarshalYAML(value *yaml.Node) error {
 	c.Privileged = false
 	var err error // for use in the switch below
 
-	log.Trace().Interface("Node", value).Interface("node type", value.Content).Msg("UnmarshalYAML")
+	log.Trace().Interface("Node", value).Interface("node type", value.Content).Msg("Container UnmarshalYAML")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
@@ -112,6 +115,7 @@ func (c *Container) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// IsRunning -  This checks if the container is running
 func (c *Container) IsRunning() (bool, error) {
 	log.Trace().Interface("c", c).Msg("Container.Running()")
 
@@ -149,6 +153,7 @@ func (c *Container) IsRunning() (bool, error) {
 	return false, nil
 }
 
+// Ensure - run the container if it isn't running
 func (c *Container) Ensure(pretend bool) error {
 	client, err := docker.NewClientFromEnv()
 	if err != nil {

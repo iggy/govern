@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Mount is a mount point
 type Mount struct {
 	Spec       string
 	MountPoint string
@@ -21,6 +22,7 @@ type Mount struct {
 	CommonFields
 }
 
+// UnmarshalYAML implements the Unmarshaler interface
 func (m *Mount) UnmarshalYAML(value *yaml.Node) error {
 	// m & Mount{}
 	m.Freq = 0
@@ -63,6 +65,7 @@ func (m *Mount) UnmarshalYAML(value *yaml.Node) error {
 
 }
 
+// Ensure - ensure mount is setup
 func (m *Mount) Ensure(pretend bool) error {
 	present, err := m.Exists()
 	if err != nil {
@@ -88,12 +91,12 @@ func (m *Mount) Ensure(pretend bool) error {
 			fstabLine := fmt.Sprintf("%s\t%s\t%s\t%s\t%d %d\n", m.Spec, m.MountPoint, m.Type, m.Options, m.Freq, m.Pass)
 			f, err := os.OpenFile("/etc/fstab", os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
-				log.Fatal().Err(err).Msg("failed to open fstab")
+				log.Error().Err(err).Msg("failed to open fstab")
 
 			}
 			defer f.Close()
 			if _, err := f.WriteString(fstabLine); err != nil {
-				log.Fatal().Err(err).Msg("failed to write mountpoint to fstab")
+				log.Error().Err(err).Msg("failed to write mountpoint to fstab")
 			}
 		}
 	}
@@ -101,6 +104,7 @@ func (m *Mount) Ensure(pretend bool) error {
 	return nil
 }
 
+// Exists - check if mountpoint exists
 func (m *Mount) Exists() (bool, error) {
 	lines, err := os.ReadFile("/etc/fstab")
 	if err != nil {

@@ -37,6 +37,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// PackageRepo describes a package repository
 type PackageRepo struct {
 	Name     string
 	GPGKey   string
@@ -44,13 +45,14 @@ type PackageRepo struct {
 	CommonFields
 }
 
+// UnmarshalYAML implements the Unmarshaler interface
 func (r *PackageRepo) UnmarshalYAML(value *yaml.Node) error {
 	var err error // for use in the switch below
 
 	repo := &PackageRepo{}
 	repo.Present = true
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("PackageRepo UnmarshalYAML")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}

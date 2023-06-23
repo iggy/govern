@@ -27,6 +27,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+// Package facts provides facts about the system
 package facts
 
 import (
@@ -58,6 +59,7 @@ type facts struct {
 	Network     NetworkFacts
 }
 
+// Facts holds facts about the system
 var Facts facts
 
 func init() {

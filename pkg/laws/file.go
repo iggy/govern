@@ -39,6 +39,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// File represents a file in the filesystem
 type File struct {
 	Path   string
 	User   string
@@ -54,6 +55,7 @@ type File struct {
 //     return nil
 // }
 
+// Ensure ensures that the file exists with the correct contents
 func (f *File) Ensure(pretend bool) error {
 	log.Trace().Interface("File", f).Msg("file ensure")
 
@@ -94,6 +96,7 @@ func (f *File) Ensure(pretend bool) error {
 	return nil
 }
 
+// Exists checks if the file exists
 func (f *File) Exists() bool {
 	if _, err := os.Stat(f.Path); err == nil {
 		return true
