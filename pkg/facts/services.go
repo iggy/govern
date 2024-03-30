@@ -1,4 +1,4 @@
-// Copyright © 2023 Iggy <iggy@theiggy.com>
+// Copyright © 2020 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,60 +27,26 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-// Package facts provides facts about the system
 package facts
 
 import (
-	"os"
-
-	"golang.org/x/sys/unix"
-
 	"github.com/rs/zerolog/log"
 )
 
-// TODO - other facts to add
-//   govern version
-//   other versions
-
-type facts struct {
-	Hostname    string
-	UID         int
-	EUID        int
-	GID         int
-	EGID        int
-	Groups      []int
-	PID         int
-	PPID        int
-	Environ     []string
-	SystemUUID  string
-	MemoryTotal uint64
-	InitSystem  string
-	CPUInfo     CPUInfoFacts
-	Distro      DistroFacts
-	Network     NetworkFacts
-	Storage     StorageFacts
-	Services    ServiceFacts
+// ServiceFacts contains facts about the system services
+type ServiceFacts struct {
+	InstalledServices []string
+	RunningServices   []string
 }
 
-// Facts holds facts about the system
-var Facts facts
-
 func init() {
-	Facts.Hostname, _ = os.Hostname()
-	Facts.UID = os.Getuid()
-	Facts.EUID = os.Geteuid()
-	Facts.GID = os.Getgid()
-	Facts.EGID = os.Getegid()
-	Facts.Groups, _ = os.Getgroups()
-	Facts.PID = os.Getpid()
-	Facts.PPID = os.Getppid()
-	Facts.Environ = os.Environ()
-
-	// TODO this struct has other possibly useful stuff (uptime, swap, etc)
-	sysinfo := &unix.Sysinfo_t{}
-	err := unix.Sysinfo(sysinfo)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to run syscall.Sysinfo()")
+	// var err error
+	// Facts.Network.Interfaces, err = net.Interfaces()
+	// if err != nil {
+	// 	log.Warn().Err(err).Msg("Failed to get list of network interfaces")
+	// }
+	// FIXME should use the init system rather than distro
+	if DistroAlpine() {
+		log.Debug().Msg("service init alpine")
 	}
-	Facts.MemoryTotal = sysinfo.Totalram
 }

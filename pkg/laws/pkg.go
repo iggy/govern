@@ -51,45 +51,57 @@ import (
 
 // Package - package info
 type Package struct {
-	Name    string
-	Version string `yaml:",omitempty"`
-	// Installed bool   `yaml:",omitempty"` // whether the package should be installed or removed
+	// Name    string
+	Version   string `yaml:",omitempty"`
+	Installed bool   `yaml:",omitempty"` // whether the package should be installed or removed
 
-	CommonFields
+	// CommonFields
+	Name   string
+	Before []string
+	After  []string
 }
 
 // UnmarshalYAML - This fills in default values if they aren't specified
 func (p *Package) UnmarshalYAML(value *yaml.Node) error {
-	pkg := &Package{}
-	pkg.Present = true // present gets set to true because they wouldn't mention it otherwise
-	var err error      // for use in the switch below
+	// defaults
+	p.Installed = true
+	p.Version = ""
+	var err error // for use in the switch below
 
-	log.Trace().Interface("Node", value).Msg("Pkg UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("UnmarshalYAML Package")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
 
 	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
+		log.Trace().Interface("node1", node).Msg("pkg unmarshal")
 		switch node.Value {
 		case "name":
-			pkg.Name = value.Content[i+1].Value
-			if pkg.Name == "" {
+			p.Name = value.Content[i+1].Value
+			if p.Name == "" {
 				return nil
 			}
 		case "version":
-			pkg.Version = value.Content[i+1].Value
-		case "present":
-			pkg.Present, err = strconv.ParseBool(value.Content[i+1].Value)
+			p.Version = value.Content[i+1].Value
+		case "installed":
+			p.Installed, err = strconv.ParseBool(value.Content[i+1].Value)
 			if err != nil {
 				log.Error().Err(err).Msg("can't parse installed field")
 				return err
 			}
+		case "before":
+			for _, j := range value.Content[i+1].Content {
+				p.Before = append(p.Before, j.Value)
+			}
+		case "after":
+			for _, j := range value.Content[i+1].Content {
+				p.After = append(p.After, j.Value)
+			}
 		}
 	}
 
-	log.Trace().Interface("pkg", pkg).Msg("what's in the box?!?!")
-	*p = *pkg
+	log.Trace().Interface("pkg", p).Msg("what's in the box?!?!")
+	// *p = *pkg
 
 	return nil
 }
@@ -161,7 +173,7 @@ func (p *Package) Install() (string, error) {
 		cmd.Stdout = &out
 		err := cmd.Run()
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to cmd.Run apk add")
+			log.Fatal().Err(err).Str("pkg", p.Name).Msg("Failed to cmd.Run apk add")
 		}
 		log.Debug().Str("stdout", out.String())
 		// TODO set version for return
@@ -187,7 +199,7 @@ func (p *Package) Install() (string, error) {
 }
 
 // Ensure - ensure a package is installed
-func (p *Package) Ensure(pretend bool) {
+func (p *Package) Ensure(pretend bool) error {
 	installed, err := p.IsInstalled()
 	if err != nil {
 		log.Debug().Err(err).Bool("pkg", installed).Msg("")
@@ -211,4 +223,6 @@ func (p *Package) Ensure(pretend bool) {
 			log.Debug().Msgf("Package installed with version: %s", vers)
 		}
 	}
+
+	return nil
 }

@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,6 @@ package facts
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"runtime"
 	"strconv"
@@ -47,7 +46,7 @@ func GetSystemUUID() string {
 	// The system UUID can be in one of a few places
 	// /sys/class/dmi/id/product_uuid
 	// /sys/class/dmi/id/board_serial
-	uuid, err := ioutil.ReadFile("/sys/class/dmi/id/product_uuid")
+	uuid, err := os.ReadFile("/sys/class/dmi/id/product_uuid")
 	if err != nil {
 		// log.Printf("error getting System UUID: %v\n", err)
 		if os.IsPermission(err) {
@@ -63,19 +62,29 @@ func GetSystemUUID() string {
 
 // CPUInfoFacts - info about the CPU(s) in the system
 type CPUInfoFacts struct {
-	Arch    string
-	Vendor  string
-	Model   string
-	Cores   int
-	Threads int
-	Flags   []string
+	Arch         string // amd64/etc
+	ArchArch     string // x86_64/etc (i.e. the output you'd get from the arch binary)
+	FeatureLevel string // v1/v2/v3/v4 equivalent to $GOAMD64 TODO
+	Vendor       string
+	Model        string
+	Cores        int
+	Threads      int
+	Flags        []string
 }
 
 // GetCPUInfo - fill in CPUInfo struct
 func GetCPUInfo() {
-	// arch/machine dod come from uname syscall, but that shit is fragile
+	// arch/machine did come from uname syscall, but that is fragile
 	// don't know if this is better, but we'll try
 	Facts.CPUInfo.Arch = runtime.GOARCH
+	switch runtime.GOARCH {
+	case "amd64":
+		Facts.CPUInfo.ArchArch = "x86_64"
+	default:
+		Facts.CPUInfo.ArchArch = "unknown"
+	}
+
+	Facts.CPUInfo.FeatureLevel = "v1"
 
 	// model/cores/etc comes from /proc/cpuinfo
 	ci, err := os.Open("/proc/cpuinfo")

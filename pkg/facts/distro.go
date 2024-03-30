@@ -32,7 +32,6 @@ package facts
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -50,7 +49,7 @@ type DistroFacts struct {
 
 // DistroAlpine - return true if we are on alpine distro
 func DistroAlpine() bool {
-	ar, err := ioutil.ReadFile("/etc/alpine-release")
+	ar, err := os.ReadFile("/etc/alpine-release")
 	if err != nil {
 		return false
 	}
@@ -95,17 +94,31 @@ func DistroUbuntu() bool {
 	}
 }
 
+// determine what init system is in use
+// note: this has to be run after the Distro* functions as it uses output from them
+func initSystem() string {
+	// TODO improve the detection of the init system (i.e. i)
+	i := ""
+	// these are some defaults that are decent guesses, but we can do some probing to dig further
+	switch Facts.Distro.Family {
+	case "alpine":
+		i = "openrc"
+	case "debian":
+		i = "systemd"
+	default:
+		// :sad_corgi:
+		i = "systemd"
+	}
+
+	// devuan has options for sysvinit, openrc, runit
+	// alpine has options for at least openrc
+
+	return i
+}
+
 func init() {
 	DistroAlpine()
 	DistroUbuntu()
-	// TODO improve the detection of the init system
-	switch Facts.Distro.Family {
-	case "alpine":
-		Facts.InitSystem = "openrc"
-	case "debian":
-		Facts.InitSystem = "systemd"
-	default:
-		// :sad_corgi:
-		Facts.InitSystem = "systemd"
-	}
+
+	Facts.InitSystem = initSystem()
 }

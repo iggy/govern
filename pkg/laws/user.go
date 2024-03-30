@@ -47,7 +47,7 @@ import (
 
 // User - a user the system should have
 type User struct {
-	Name           string   ``                       // the user's name
+	// Name           string   ``                       // the user's name
 	UID            uint64   `yaml:",omitempty"`      // the user's UID, uint64 matches
 	GID            uint64   `yaml:",omitempty"`      // The primary group ID
 	Fullname       string   ``                       // part of the GECOS string
@@ -58,7 +58,11 @@ type User struct {
 	Exists         bool     ``                       // Whether the user should exist on the system or not
 	ExtraGroups    []string ``                       // required extra group names
 	OptionalGroups []string `yaml:"optional_groups"` // if these groups exist already, add the user to them, otherwise ignore
-	CommonFields            // CommonFields `yaml:"commonfields,inline"` // fields that are supported for everything, mostly dep related
+	// CommonFields            //`yaml:",inline"` // CommonFields `yaml:"commonfields,inline"` // fields that are supported for everything, mostly dep related
+	Name   string
+	Before []string
+	After  []string
+
 	// TODO *Groups ^ should be array and should be expanded out below
 }
 
@@ -67,12 +71,12 @@ func (u *User) UnmarshalYAML(value *yaml.Node) error {
 	var err error      // for use in the switch below
 	u.UID = ^uint64(0) // effectively -1, but go does math different than C
 	u.GID = ^uint64(0) // see https://blog.golang.org/constants
-	// log.Trace().Interface("Node", value).Msg("UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("UnmarshalYAML User")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
 	for i, node := range value.Content {
-		// log.Trace().Interface("node1", node).Msg("")
+		log.Trace().Interface("node1", node).Msg("user unmarshal")
 		switch node.Value {
 		case "name":
 			u.Name = value.Content[i+1].Value
@@ -107,6 +111,15 @@ func (u *User) UnmarshalYAML(value *yaml.Node) error {
 		case "optional_groups":
 			for _, g := range value.Content[i+1].Content {
 				u.OptionalGroups = append(u.OptionalGroups, g.Value)
+			}
+		// common fields
+		case "after":
+			for _, j := range value.Content[i+1].Content {
+				u.After = append(u.After, j.Value)
+			}
+		case "before":
+			for _, j := range value.Content[i+1].Content {
+				u.Before = append(u.Before, j.Value)
 			}
 		}
 	}
@@ -150,15 +163,18 @@ func (u *User) Create() {
 
 	log.Debug().Msg("Creating user")
 
-	// check which kind of distro we're on
-	_, err := os.Stat("/usr/sbin/adduser")
-	if err != nil && facts.Facts.Distro.Slug == "alpine" {
+	if facts.Facts.Distro.Family == "alpine" {
 		log.Debug().Msg("on Alpine, using adduser")
 		// TODO handle optionalgroups, extragroups, system, password
+		// adduser expects the group to be a name not a gid
+		group, err := user.LookupGroupId(fmt.Sprintf("%d", u.GID))
+		if err != nil {
+			log.Error().Err(err).Uint64("gid", u.GID).Msg("failed to lookup group name from GID")
+		}
 		args = append(args,
 			"-u", fmt.Sprintf("%d", u.UID),
 			"-s", u.Shell,
-			"-G", fmt.Sprintf("%d", u.GID),
+			"-G", group.Name,
 			"-D",
 			"-g", u.Fullname,
 			"-h", u.HomeDir,
@@ -181,9 +197,9 @@ func (u *User) Create() {
 	log.Debug().Strs("args", args).Msg("calling add user command with args")
 	cmd.Stdout = &stdOut
 	cmd.Stdout = &stdErr
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to create user")
+		log.Fatal().Err(err).Str("stdout", stdOut.String()).Str("stderr", stdErr.String()).Msg("failed to create user")
 	}
 	log.Debug().Str("stdout", stdOut.String()).Str("stderr", stdErr.String()).Msg("add user command output")
 
@@ -224,6 +240,7 @@ func (u *User) Ensure(pretend bool) error {
 		}
 		if u.Password != "" && pwd != u.Password {
 			log.Info().Str("u.Password", u.Password).Str("user", u.Name).Msg("password doesn't match, changing")
+			// TODO
 		}
 		// system field is only interesting when creating new users
 		// if eu.System != u.System {
@@ -235,10 +252,13 @@ func (u *User) Ensure(pretend bool) error {
 
 // Group - a group the system should have
 type Group struct {
-	Name   string
+	// Name   string
 	GID    uint64
 	System bool
-	CommonFields
+	// CommonFields
+	Name   string
+	Before []string
+	After  []string
 }
 
 // Ensure - check if the group exists

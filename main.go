@@ -41,9 +41,9 @@ import (
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	// zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	// zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	// zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	log.Debug().Msg("Starting govern CLI")
 	cmd.Execute()
 }

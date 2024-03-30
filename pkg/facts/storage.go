@@ -27,60 +27,49 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-// Package facts provides facts about the system
 package facts
 
 import (
-	"os"
+	"fmt"
 
-	"golang.org/x/sys/unix"
-
+	"github.com/jaypipes/ghw"
 	"github.com/rs/zerolog/log"
 )
 
-// TODO - other facts to add
-//   govern version
-//   other versions
-
-type facts struct {
-	Hostname    string
-	UID         int
-	EUID        int
-	GID         int
-	EGID        int
-	Groups      []int
-	PID         int
-	PPID        int
-	Environ     []string
-	SystemUUID  string
-	MemoryTotal uint64
-	InitSystem  string
-	CPUInfo     CPUInfoFacts
-	Distro      DistroFacts
-	Network     NetworkFacts
-	Storage     StorageFacts
-	Services    ServiceFacts
+type DiskInfo struct {
+	Name       string // (sda, nvme0, vda, etc)
+	MountPoint string // where it's mounted
 }
 
-// Facts holds facts about the system
-var Facts facts
+type StorageFacts struct {
+	LocalDisks []DiskInfo // list of local disks
+	// 	RootDisk string // which of the local disks is mounted at /
+	// RootFSType string // what format is the rootfs (btrfs, xfs, ext4, bcachefs, etc)
+}
+
+func (f *StorageFacts) GetRoot() (*DiskInfo, error) {
+	for _, di := range f.LocalDisks {
+		if di.MountPoint == "/" {
+			return &di, nil
+		}
+	}
+	return nil, fmt.Errorf("unable to find rootfs device")
+}
+
+func GetStorageFactsInfo() {
+	// Facts.Storage
+	block, err := ghw.Block()
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get block info from ghw")
+	}
+	for _, disk := range block.Disks {
+		for _, part := range disk.Partitions {
+			di := &DiskInfo{part.Name, part.MountPoint}
+			Facts.Storage.LocalDisks = append(Facts.Storage.LocalDisks, *di)
+		}
+	}
+}
 
 func init() {
-	Facts.Hostname, _ = os.Hostname()
-	Facts.UID = os.Getuid()
-	Facts.EUID = os.Geteuid()
-	Facts.GID = os.Getgid()
-	Facts.EGID = os.Getegid()
-	Facts.Groups, _ = os.Getgroups()
-	Facts.PID = os.Getpid()
-	Facts.PPID = os.Getppid()
-	Facts.Environ = os.Environ()
-
-	// TODO this struct has other possibly useful stuff (uptime, swap, etc)
-	sysinfo := &unix.Sysinfo_t{}
-	err := unix.Sysinfo(sysinfo)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to run syscall.Sysinfo()")
-	}
-	Facts.MemoryTotal = sysinfo.Totalram
+	GetStorageFactsInfo()
 }

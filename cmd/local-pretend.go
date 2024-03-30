@@ -30,9 +30,6 @@
 package cmd
 
 import (
-	"path/filepath"
-
-	"github.com/iggy/govern/pkg/facts"
 	"github.com/iggy/govern/pkg/laws"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -45,30 +42,83 @@ var pretendCmd = &cobra.Command{
 	Long:  `Output what changes an apply would run using the given configs.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Debug().Msg("pretend called")
+		// file, _ := cmd.Flags().GetString("file")
+		// directory, _ := cmd.Flags().GetString("directory")
+
 		file, _ := cmd.Flags().GetString("file")
 		directory, _ := cmd.Flags().GetString("directory")
-
-		log.Debug().Msgf("distro slug: %s\n", facts.Facts.Distro.Slug)
-		log.Debug().Msgf("hostname: %v\n", facts.Facts.Hostname)
+		var toParse string
 
 		if file != "" {
-			err := laws.ProcessFile(file, true)
-			if err != nil {
-				log.Fatal().Msgf("pretend: failed to process file (%s): %v\n", file, err)
-			}
+			toParse = file
 		}
 		if directory != "" {
-			files, err := filepath.Glob(filepath.Join(directory, "*"))
-			if err != nil {
-				log.Fatal().Msgf("pretend: Invalid pattern")
-			}
-			for _, file := range files {
-				err := laws.ProcessFile(file, true)
-				if err != nil {
-					log.Fatal().Msgf("pretend: failed to process file (%s): %v\n", file, err)
-				}
-			}
+			toParse = directory
 		}
+		sorted, err := laws.ParseFiles(toParse)
+		if err != nil {
+			log.Fatal().Msgf("lint: failed to process (%s): %v\n", toParse, err)
+		}
+		for _, v := range sorted {
+			// vValues := reflect.ValueOf(v.Label().Law)
+			// vTypes := vValues.Type()
+
+			// for i := 0; i < vValues.Elem().NumField(); i++ {
+			// 	log.Debug().
+			// 		Interface("vValues i", vValues.Field(i)).
+			// 		Msgf("vValues i: %v - %v", vValues.Field(i), vValues.Field(i).Type())
+			// }
+
+			l := v.Label().Law
+			err = l.Ensure(true)
+			if err != nil {
+				// we don't need to fatal on a pretend
+				log.Error().
+					Err(err).
+					Str("name", v.Label().Name).
+					Str("type", v.Label().Type).
+					Msg("failed to ensure")
+			}
+
+			// log.Trace().
+			// 	Interface("v", v).
+			// 	Interface("vValues", vValues).
+			// 	Interface("vTypes", vTypes.Elem().Field(0)).
+			// 	Interface("type", reflect.TypeOf(v.Label().Law)).
+			// 	Msgf("90: %v - %v - %v",
+			// 		v,
+			// 		reflect.TypeOf(reflect.ValueOf(v.Label().Law).Interface()).String(),
+			// 		reflect.ValueOf(v.Label().Law).Interface(),
+			// 	)
+			// switch lt := reflect.ValueOf(v.Label().Law).Interface().(type) {
+			// case laws.User:
+			// 	log.Debug().Interface("lt", lt).Msgf("%v", lt)
+			// default:
+			// 	log.Debug().Interface("lt", lt).Msgf("default %v", lt)
+
+			// }
+		}
+		// 		log.Debug().Msgf("distro slug: %s\n", facts.Facts.Distro.Slug)
+		// log.Debug().Msgf("hostname: %v\n", facts.Facts.Hostname)
+
+		// if file != "" {
+		// 	err := laws.ProcessFile(file, true)
+		// 	if err != nil {
+		// 		log.Fatal().Msgf("pretend: failed to process file (%s): %v\n", file, err)
+		// 	}
+		// }
+		// if directory != "" {
+		// 	files, err := filepath.Glob(filepath.Join(directory, "*"))
+		// 	if err != nil {
+		// 		log.Fatal().Msgf("pretend: Invalid pattern")
+		// 	}
+		// 	for _, file := range files {
+		// 		err := laws.ProcessFile(file, true)
+		// 		if err != nil {
+		// 			log.Fatal().Msgf("pretend: failed to process file (%s): %v\n", file, err)
+		// 		}
+		// 	}
+		// }
 	},
 }
 

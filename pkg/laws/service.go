@@ -33,21 +33,69 @@ package laws
 
 import (
 	"bytes"
+	"io"
 	"os/exec"
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 )
 
 // Service - package info
 type Service struct {
-	Name       string
+	// Name       string
 	State      string `yaml:",omitempty"`
 	Persistent bool   `yaml:",omitempty"`
-	Runlevel   string `yaml:",omitempty"`
+	RunLevel   string `yaml:",omitempty"`
 
-	CommonFields
+	// CommonFields
+	Name   string
+	Before []string
+	After  []string
 }
+
+func (s *Service) UnmarshalYAML(value *yaml.Node) error {
+	// log.Logger = log.With().Str("unmarshalyaml", "mount").Logger()
+
+	s.State = "started"
+	s.Persistent = true
+	s.RunLevel = "default"
+
+	type raw Service
+	err := value.Decode((*raw)(s)) // this goes into an infinite loop
+	if err != nil && err != io.EOF {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
+	}
+	return nil
+}
+
+// UnmarshalYAML - This fills in default values if they aren't specified
+// func (s *Service) UnmarshalYAML(value *yaml.Node) error {
+// 	// defaults
+// 	s.State = "enabled"
+// 	s.Persistent = true
+// 	s.RunLevel = "default"
+
+// 	log.Trace().Interface("Node", value).Msg("UnmarshalYAML Service")
+// 	if value.Tag != "!!map" {
+// 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
+// 	}
+// 	for i, node := range value.Content {
+// 		log.Trace().Interface("node1", node).Msg("user unmarshal")
+// 		switch node.Value {
+// 		case "state":
+// 			s.State = value.Content[i+1].Value
+// 		case "persistent":
+// 			s.Persistent, _ = strconv.ParseBool(value.Content[i+1].Value)
+// 		case "run_level":
+// 			s.RunLevel = value.Content[i+1].Value
+// 		}
+// 	}
+// 	log.Trace().Interface("service", s).Msg("UnmarshalYAML service")
+
+// 	return nil
+// }
 
 // CurrentState - get current state of service
 func (s *Service) CurrentState() string {
@@ -57,10 +105,12 @@ func (s *Service) CurrentState() string {
 		cmd := exec.Command("rc-service", s.Name, "status")
 		var out bytes.Buffer
 		cmd.Stdout = &out
-		err := cmd.Run()
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service status")
-		}
+		// FIXME return 3 just means it's stopped not that anything is wrong, but we should check other failure modes
+		_ = cmd.Run()
+		// err := cmd.Run()
+		// if err != nil {
+		// 	log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service status")
+		// }
 		log.Debug().Str("stdout", out.String())
 		switch cmd.ProcessState.ExitCode() {
 		case 3:
@@ -76,19 +126,21 @@ func (s *Service) CurrentState() string {
 	return ""
 }
 
+// FIXME changing the runlevel doesn't update the service
 // Ensure - ensure service is in desired state
-func (s *Service) Ensure(pretend bool) {
+func (s *Service) Ensure(pretend bool) error {
+	log.Debug().Str("service name", s.Name).Msg("Service ensure")
 	cstate := s.CurrentState()
 	if pretend {
 		if cstate != s.State {
-			log.Info().Str("current state", cstate).Str("desired state", s.State).Msg("Service not in desired state")
+			log.Info().Str("service name", s.Name).Str("current state", cstate).Str("desired state", s.State).Msg("service not in desired state")
 		} else {
-			log.Info().Msgf("service in desired state")
+			log.Info().Str("service name", s.Name).Str("current state", cstate).Str("desired state", s.State).Msg("service in desired state")
 		}
 	} else {
 		if cstate != s.State {
 			if s.State == "started" {
-				log.Info().Str("current state", cstate).Str("desired state", s.State).Msg("starting service")
+				log.Info().Str("name", s.Name).Str("current state", cstate).Str("desired state", s.State).Msg("starting service")
 				switch facts.Facts.Distro.Family {
 				case "alpine":
 					cmd := exec.Command("rc-service", s.Name, "start")
@@ -99,6 +151,16 @@ func (s *Service) Ensure(pretend bool) {
 						log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service start")
 					}
 					log.Debug().Str("stdout", out.String())
+
+					if s.Persistent {
+						cmd := exec.Command("rc-update", "add", s.Name, s.RunLevel)
+						var out bytes.Buffer
+						cmd.Stdout = &out
+						err := cmd.Run()
+						if err != nil {
+							log.Fatal().Err(err).Str("service", s.Name).Msg("Failed to cmd.Run rc-update add")
+						}
+					}
 				case "debian":
 
 				}
@@ -110,7 +172,7 @@ func (s *Service) Ensure(pretend bool) {
 			switch facts.Facts.Distro.Family {
 			case "alpine":
 				// this command is
-				cmd := exec.Command("rc-update", "add", s.Name, s.Runlevel)
+				cmd := exec.Command("rc-update", "add", s.Name, s.RunLevel)
 				var out bytes.Buffer
 				cmd.Stdout = &out
 				err := cmd.Run()
@@ -123,4 +185,5 @@ func (s *Service) Ensure(pretend bool) {
 
 		}
 	}
+	return nil
 }

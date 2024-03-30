@@ -30,8 +30,6 @@
 package cmd
 
 import (
-	"path/filepath"
-
 	"github.com/iggy/govern/pkg/laws"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -49,23 +47,21 @@ local directory.
 		directory, _ := cmd.Flags().GetString("directory")
 		log.Info().Str("file", file).Str("dir", directory).Msg("applying config")
 
+		var toParse string
+
 		if file != "" {
-			err := laws.ProcessFile(file, false)
-			if err != nil {
-				log.Fatal().Msgf("apply: failed to process file (%s): %v\n", file, err)
-			}
+			toParse = file
 		}
 		if directory != "" {
-			files, err := filepath.Glob(filepath.Join(directory, "*"))
-			if err != nil {
-				log.Fatal().Msgf("apply: Invalid pattern")
-			}
-			for _, file := range files {
-				err := laws.ProcessFile(file, false)
-				if err != nil {
-					log.Fatal().Msgf("apply: failed to process file (%s): %v\n", file, err)
-				}
-			}
+			toParse = directory
+		}
+		sorted, err := laws.ParseFiles(toParse)
+		if err != nil {
+			log.Fatal().Msgf("lint: failed to process (%s): %v\n", toParse, err)
+		}
+		for _, v := range sorted {
+			l := v.Label().Law
+			l.Ensure(false)
 		}
 	},
 }

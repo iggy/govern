@@ -31,12 +31,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"text/tabwriter"
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // factsCmd represents the facts command
@@ -50,35 +49,47 @@ Use this to see the facts you can reference in the laws yaml templates.
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Trace().Msg("facts called")
 
-		w := tabwriter.NewWriter(os.Stdout, 1, 4, 4, ' ', 0)
-		fmt.Fprintf(w, "hostname:\t%s\n", facts.Facts.Hostname)
-		fmt.Fprintf(w, "distro name:\t%v\n", facts.Facts.Distro.Name)
-		fmt.Fprintf(w, "distro slug:\t%v\n", facts.Facts.Distro.Slug)
-		fmt.Fprintf(w, "distro family:\t%v\n", facts.Facts.Distro.Family)
-		fmt.Fprintf(w, "distro version:\t%v\n", facts.Facts.Distro.Version)
-		fmt.Fprintf(w, "distro codename:\t%v\n", facts.Facts.Distro.Codename)
-		fmt.Fprintf(w, "System UUID:\t%v\n", facts.Facts.SystemUUID)
-		fmt.Fprintf(w, "Total Memory:\t%d (%dGiB)\n\n", facts.Facts.MemoryTotal, facts.Facts.MemoryTotal>>30)
-		w.Flush()
+		// w := tabwriter.NewWriter(os.Stdout, 1, 4, 4, ' ', 0)
+		// fmt.Fprintf(w, "hostname:\t%s\n", facts.Facts.Hostname)
+		// fmt.Fprintf(w, "distro name:\t%v\n", facts.Facts.Distro.Name)
+		// fmt.Fprintf(w, "distro slug:\t%v\n", facts.Facts.Distro.Slug)
+		// fmt.Fprintf(w, "distro family:\t%v\n", facts.Facts.Distro.Family)
+		// fmt.Fprintf(w, "distro version:\t%v\n", facts.Facts.Distro.Version)
+		// fmt.Fprintf(w, "distro codename:\t%v\n", facts.Facts.Distro.Codename)
+		// fmt.Fprintf(w, "System UUID:\t%v\n", facts.Facts.SystemUUID)
+		// fmt.Fprintf(w, "Total Memory:\t%d (%dGiB)\n\n", facts.Facts.MemoryTotal, facts.Facts.MemoryTotal>>30)
+		// w.Flush()
 
-		fmt.Fprintf(w, "CPUInfo:\t\n")
-		fmt.Fprintf(w, "\tArch:\t%v\n", facts.Facts.CPUInfo.Arch)
-		fmt.Fprintf(w, "\tVendor:\t%v\n", facts.Facts.CPUInfo.Vendor)
-		fmt.Fprintf(w, "\tModel:\t%v\n", facts.Facts.CPUInfo.Model)
-		fmt.Fprintf(w, "\tCores:\t%v\n", facts.Facts.CPUInfo.Cores)
-		fmt.Fprintf(w, "\tThreads:\t%v\n\n", facts.Facts.CPUInfo.Threads)
-		// fmt.Fprintf(w, "\tFlags:\t%#v\n", facts.Facts.CPUInfo.Flags)
+		// fmt.Fprintf(w, "CPUInfo:\t\n")
+		// fmt.Fprintf(w, "\tArch:\t%v\n", facts.Facts.CPUInfo.Arch)
+		// fmt.Fprintf(w, "\tVendor:\t%v\n", facts.Facts.CPUInfo.Vendor)
+		// fmt.Fprintf(w, "\tModel:\t%v\n", facts.Facts.CPUInfo.Model)
+		// fmt.Fprintf(w, "\tCores:\t%v\n", facts.Facts.CPUInfo.Cores)
+		// fmt.Fprintf(w, "\tThreads:\t%v\n\n", facts.Facts.CPUInfo.Threads)
+		// // fmt.Fprintf(w, "\tFlags:\t%#v\n", facts.Facts.CPUInfo.Flags)
 
-		// fmt.Fprintf(w, "net interfaces:\t%#v\n", facts.Facts.Network.Interfaces)
-		fmt.Fprintf(w, "net interfaces:\n")
-		for _, iface := range facts.Facts.Network.Interfaces {
-			fmt.Fprintf(w, "\t%s\t%s\n", iface.Name, iface.HardwareAddr)
-		}
-		w.Flush()
+		// // fmt.Fprintf(w, "net interfaces:\t%#v\n", facts.Facts.Network.Interfaces)
+		// fmt.Fprintf(w, "net interfaces:\n")
+		// for _, iface := range facts.Facts.Network.Interfaces {
+		// 	fmt.Fprintf(w, "\t%s\t%s\n", iface.Name, iface.HardwareAddr)
+		// }
+		// w.Flush()
 
-		// fmt.Fprintf(w, "Env:\t %v\n", facts.Facts.Environ)
-		w.Flush()
+		// fmt.Fprintf(w, "disk info:\n")
+		// for _, d := range facts.Facts.Storage.LocalDisks {
+		// 	fmt.Fprintf(w, "\tdev: %v\tmounted: %v\n", d.Name, d.MountPoint)
+		// }
+
+		// // fmt.Fprintf(w, "Env:\t %v\n", facts.Facts.Environ)
+		// w.Flush()
+
 		// fmt.Println(facts.Facts)
+
+		yOut, err := yaml.Marshal(facts.Facts)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to marshal facts to yaml")
+		}
+		fmt.Println(string(yOut))
 	},
 }
 
