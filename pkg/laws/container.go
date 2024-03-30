@@ -1,19 +1,20 @@
-// Copyright © 2021 Iggy <iggy@theiggy.com>
+// Copyright © 2023 Iggy <iggy@theiggy.com>
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
 //
-// 1. Redistributions of source code must retain the above copyright notice,
-//    this list of conditions and the following disclaimer.
+//  1. Redistributions of source code must retain the above copyright notice,
+//     this list of conditions and the following disclaimer.
 //
-// 2. Redistributions in binary form must reproduce the above copyright notice,
-//    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution.
+//  2. Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
 //
-// 3. Neither the name of the copyright holder nor the names of its contributors
-//    may be used to endorse or promote products derived from this software
-//    without specific prior written permission.
+//  3. Neither the name of the copyright holder nor the names of its contributors
+//     may be used to endorse or promote products derived from this software
+//     without specific prior written permission.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -26,7 +27,6 @@
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
-
 package laws
 
 import (
@@ -58,7 +58,7 @@ type LogOpts struct {
 
 // Container -  This is a struct for the container
 type Container struct {
-	Name          string
+	// Name          string
 	Image         string
 	Running       bool
 	Volumes       map[string]string
@@ -73,7 +73,10 @@ type Container struct {
 	Publish       map[string]string
 	RestartPolicy string // no|on-failure[:max-retries]|always|unless-stopped
 
-	CommonFields
+	// CommonFields
+	Name   string
+	Before []string
+	After  []string
 }
 
 // UnmarshalYAML - This fills in default values if they aren't specified
@@ -109,6 +112,15 @@ func (c *Container) UnmarshalYAML(value *yaml.Node) error {
 		case "labels":
 			// for l := range node.
 			log.Trace().Interface("node", node).Msg("labels")
+
+		case "before":
+			for _, j := range value.Content[i+1].Content {
+				c.Before = append(c.Before, j.Value)
+			}
+		case "after":
+			for _, j := range value.Content[i+1].Content {
+				c.After = append(c.After, j.Value)
+			}
 		}
 	}
 

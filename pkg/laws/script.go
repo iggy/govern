@@ -41,13 +41,15 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
 // Script is a script to run
 type Script struct {
-	Name       string
+	// Name       string
 	Shell      string
 	Script     string
 	Env        []string
@@ -55,7 +57,10 @@ type Script struct {
 	WorkingDir string
 	Creates    []string
 	RunAs      string
-	CommonFields
+	// CommonFields
+	Name   string
+	Before []string
+	After  []string
 }
 
 // UnmarshalYAML implements the Unmarshaler interface.
@@ -65,7 +70,7 @@ func (s *Script) UnmarshalYAML(value *yaml.Node) error {
 	//  env should match parent shell by default and then be added to
 	//
 
-	log.Trace().Interface("Node", value).Msg("Script UnmarshalYAML")
+	log.Trace().Interface("Node", value).Msg("UnmarshalYAML Script")
 	if value.Tag != "!!map" {
 		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
 	}
@@ -92,6 +97,14 @@ func (s *Script) UnmarshalYAML(value *yaml.Node) error {
 			s.WorkingDir = value.Content[i+1].Value
 		case "run_as":
 			s.RunAs = value.Content[i+1].Value
+		case "before":
+			for _, j := range value.Content[i+1].Content {
+				s.Before = append(s.Before, j.Value)
+			}
+		case "after":
+			for _, j := range value.Content[i+1].Content {
+				s.After = append(s.After, j.Value)
+			}
 		}
 	}
 
@@ -161,7 +174,7 @@ func (s *Script) Run(pretend bool) error {
 				log.Warn().Err(err).Msg("could not convert gid")
 				return err
 			}
-			cmd.SysProcAttr = &syscall.SysProcAttr{
+			cmd.SysProcAttr = &unix.SysProcAttr{
 				Credential: &syscall.Credential{
 					Uid: uint32(uid),
 					Gid: uint32(gid),

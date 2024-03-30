@@ -30,6 +30,7 @@
 package cmd
 
 import (
+	"github.com/iggy/govern/pkg/laws"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -44,6 +45,21 @@ Currently unimplemented
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Trace().Msg("lint called")
+		file, _ := cmd.Flags().GetString("file")
+		directory, _ := cmd.Flags().GetString("directory")
+		var toParse string
+
+		if file != "" {
+			toParse = file
+		}
+		if directory != "" {
+			toParse = directory
+		}
+		sorted, err := laws.ParseFiles(toParse)
+		if err != nil {
+			log.Fatal().Msgf("lint: failed to process (%s): %v\n", toParse, err)
+		}
+		log.Trace().Interface("sorted", sorted).Msg("lint: ")
 	},
 }
 
@@ -59,4 +75,6 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// lintCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	lintCmd.Flags().StringP("file", "f", "", "local state file")
+	lintCmd.Flags().StringP("directory", "d", "", "directory with Laws yaml files")
 }
