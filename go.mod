@@ -9,7 +9,7 @@ require (
 	github.com/hmdsefi/gograph v0.4.2
 	github.com/jaypipes/ghw v0.12.0
 	github.com/rs/zerolog v1.33.0
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	golang.org/x/sys v0.23.0
 	gopkg.in/yaml.v3 v3.0.1
