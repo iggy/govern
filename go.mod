@@ -3,7 +3,7 @@ module github.com/iggy/govern
 go 1.21
 
 require (
-	dario.cat/mergo v1.0.0
+	dario.cat/mergo v1.0.1
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/fsouza/go-dockerclient v1.11.0
 	github.com/hmdsefi/gograph v0.4.2
