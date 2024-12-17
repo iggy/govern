@@ -116,6 +116,7 @@ type Laws3 struct {
 	}
 	PackageRepos struct {
 		Present []*PackageRepo
+		Absent  []*PackageRepo
 	} `yaml:"package_repos"`
 	Containers struct {
 		// FIXME revisit this naming

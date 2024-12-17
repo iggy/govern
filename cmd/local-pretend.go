@@ -60,6 +60,7 @@ var pretendCmd = &cobra.Command{
 			log.Fatal().Msgf("lint: failed to process (%s): %v\n", toParse, err)
 		}
 		for _, v := range sorted {
+			log.Debug().Interface("v", v).Interface("v.Label", v.Label())
 			// vValues := reflect.ValueOf(v.Label().Law)
 			// vTypes := vValues.Type()
 

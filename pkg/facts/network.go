@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2024 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,11 @@ import (
 
 // NetworkFacts contains facts about the network
 type NetworkFacts struct {
+	// TODO
+	// HasEthernet bool  // can be used to only install ethernet packages on systems with ethernet, etc
+	// HasFibre?
+	// HasWifi?
+	// HasBluetooth?
 	Interfaces []net.Interface
 }
 
