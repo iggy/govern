@@ -40,6 +40,7 @@ var runCmd = &cobra.Command{
 	Long:  `Run the master`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// unimplented
+
 	},
 }
 

@@ -431,9 +431,9 @@ func (f *FileInsert) Ensure(pretend bool) error {
 					Msg("already done")
 				return nil
 			}
-			if err != nil {
-				fl.Error().Err(err).Msg("failed to match")
-			}
+			// if err != nil {
+			// 	fl.Error().Err(err).Msg("failed to match")
+			// }
 			if line == f.AfterLine {
 				// we found our line, so we add it and the text to the output
 				newContent = append(newContent, strings.TrimRight(line, "\r\n"))

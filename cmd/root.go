@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2024 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -92,5 +92,4 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		log.Error().Msgf("Using config file: %s", viper.ConfigFileUsed())
 	}
-
 }
