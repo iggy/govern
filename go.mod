@@ -2,7 +2,7 @@ module github.com/iggy/govern
 
 go 1.22.0
 
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	dario.cat/mergo v1.0.1
@@ -10,7 +10,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.12.0
 	github.com/hmdsefi/gograph v0.4.2
 	github.com/jaypipes/ghw v0.13.0
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
 	golang.org/x/sys v0.28.0
