@@ -1,6 +1,6 @@
 module github.com/iggy/govern
 
-go 1.22.0
+go 1.23.0
 
 toolchain go1.23.4
 
@@ -13,7 +13,7 @@ require (
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.34.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
