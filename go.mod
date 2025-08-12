@@ -9,7 +9,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/fsouza/go-dockerclient v1.12.0
 	github.com/hmdsefi/gograph v0.4.2
-	github.com/jaypipes/ghw v0.13.0
+	github.com/jaypipes/ghw v0.17.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
