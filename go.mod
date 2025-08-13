@@ -1,14 +1,12 @@
 module github.com/iggy/govern
 
-go 1.23.0
-
-toolchain go1.24.1
+go 1.24.2
 
 require (
 	dario.cat/mergo v1.0.1
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/fsouza/go-dockerclient v1.12.1
-	github.com/hmdsefi/gograph v0.4.2
+	github.com/hmdsefi/gograph v0.5.0
 	github.com/jaypipes/ghw v0.17.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
