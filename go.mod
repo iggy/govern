@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.1
 
 require (
-	dario.cat/mergo v1.0.1
+	dario.cat/mergo v1.0.2
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/fsouza/go-dockerclient v1.12.1
 	github.com/hmdsefi/gograph v0.4.2
