@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2025 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -58,7 +58,7 @@ func DistroAlpine() bool {
 	Facts.Distro.Family = "alpine"
 	Facts.Distro.Version = strings.TrimSpace(string(ar))
 	// This could technically be different, but never heard of it in practice
-	Facts.Distro.InitSystem = "openrc"
+	// Facts.Distro.InitSystem = "openrc"
 	return true
 }
 
@@ -89,36 +89,131 @@ func DistroUbuntu() bool {
 		// This is the one that's been in use for a while
 		// but it could technically be upstart as well
 		// FIXME actually determine which one is in use
-		Facts.Distro.InitSystem = "systemd"
+		// Facts.Distro.InitSystem = "systemd"
 		return true
 	}
 }
 
+// DistroArch - return true if we are on an Arch Linux distro
+func DistroArch() bool {
+	if _, err := os.Stat("/etc/arch-release"); err == nil {
+		Facts.Distro.Name = "Arch Linux"
+		Facts.Distro.Slug = "arch"
+		Facts.Distro.Family = "arch"
+		// Arch Linux does not have a version number
+		Facts.Distro.Version = "rolling"
+		Facts.Distro.InitSystem = "systemd"
+		return true
+	}
+	return false
+}
+
+// DistroRHEL - return true if we are on a Red Hat Enterprise Linux distro
+func DistroRHEL() bool {
+	if _, err := os.Stat("/etc/redhat-release"); err == nil {
+		content, err := os.ReadFile("/etc/redhat-release")
+		if err != nil {
+			return false
+		}
+		line := strings.TrimSpace(string(content))
+		Facts.Distro.Name = "Red Hat Enterprise Linux"
+		Facts.Distro.Slug = "rhel"
+		Facts.Distro.Family = "rhel"
+		// Extract version from the release file
+		parts := strings.Fields(line)
+		if len(parts) > 6 {
+			Facts.Distro.Version = parts[6]
+		} else {
+			Facts.Distro.Version = "unknown"
+		}
+		Facts.Distro.InitSystem = "systemd"
+		return true
+	}
+	return false
+}
+
+// DistroFedora - return true if we are on a Fedora distro
+func DistroFedora() bool {
+	if _, err := os.Stat("/etc/fedora-release"); err == nil {
+		content, err := os.ReadFile("/etc/fedora-release")
+		if err != nil {
+			return false
+		}
+		line := strings.TrimSpace(string(content))
+		Facts.Distro.Name = "Fedora"
+		Facts.Distro.Slug = "fedora"
+		Facts.Distro.Family = "rhel"
+		// Extract version from the release file
+		parts := strings.Fields(line)
+		if len(parts) > 2 {
+			Facts.Distro.Version = parts[2]
+		} else {
+			Facts.Distro.Version = "unknown"
+		}
+		Facts.Distro.InitSystem = "systemd"
+		return true
+	}
+	return false
+}
+
 // determine what init system is in use
-// note: this has to be run after the Distro* functions as it uses output from them
 func initSystem() string {
-	// TODO improve the detection of the init system (i.e. i)
-	i := ""
-	// these are some defaults that are decent guesses, but we can do some probing to dig further
-	switch Facts.Distro.Family {
-	case "alpine":
-		i = "openrc"
-	case "debian":
-		i = "systemd"
-	default:
-		// :sad_corgi:
-		i = "systemd"
+	// Check for specific init system executables or files
+	if _, err := os.Stat("/sbin/init"); err == nil {
+		// Check if /sbin/init is a symlink and resolve it
+		initPath, err := os.Readlink("/sbin/init")
+		if err == nil {
+			switch {
+			case strings.Contains(initPath, "systemd"):
+				return "systemd"
+			case strings.Contains(initPath, "openrc"):
+				return "openrc"
+			case strings.Contains(initPath, "runit"):
+				return "runit"
+			case strings.Contains(initPath, "sysvinit"):
+				return "sysvinit"
+			case strings.Contains(initPath, "upstart"):
+				return "upstart"
+			}
+		}
 	}
 
-	// devuan has options for sysvinit, openrc, runit
-	// alpine has options for at least openrc
+	// Fallback to checking for specific init system executables
+	if _, err := os.Stat("/bin/systemctl"); err == nil {
+		return "systemd"
+	}
+	if _, err := os.Stat("/etc/init.d"); err == nil {
+		return "sysvinit"
+	}
+	if _, err := os.Stat("/etc/runit"); err == nil {
+		return "runit"
+	}
+	if _, err := os.Stat("/etc/openrc"); err == nil {
+		return "openrc"
+	}
+	if _, err := os.Stat("/sbin/initctl"); err == nil {
+		return "upstart"
+	}
 
-	return i
+	// Default to systemd if no specific init system is detected
+	return "systemd"
 }
 
 func init() {
-	DistroAlpine()
-	DistroUbuntu()
-
 	Facts.InitSystem = initSystem()
+	if DistroAlpine() {
+		return
+	}
+	if DistroUbuntu() {
+		return
+	}
+	if DistroArch() {
+		return
+	}
+	if DistroRHEL() {
+		return
+	}
+	if DistroFedora() {
+		return
+	}
 }
