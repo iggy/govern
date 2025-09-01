@@ -1,4 +1,4 @@
-// Copyright © 2023 Iggy <iggy@theiggy.com>
+// Copyright © 2025 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
