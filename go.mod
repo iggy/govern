@@ -6,7 +6,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/fsouza/go-dockerclient v1.12.2
-	github.com/hmdsefi/gograph v0.6.0
+	github.com/hmdsefi/gograph v0.7.0
 	github.com/jaypipes/ghw v0.19.1
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.1
