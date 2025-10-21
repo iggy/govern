@@ -21,7 +21,7 @@ jobs:
           go-version-file: 'go.mod'
       - run: go build ./...
       - name: Mega Linter
-        uses: megalinter/megalinter/flavors/go@v8.8.0
+        uses: megalinter/megalinter/flavors/go@v9.1.0
         env:
           # VALIDATE_ALL_CODEBASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
           # Validates all source when push on main, else just the git diff with main.
