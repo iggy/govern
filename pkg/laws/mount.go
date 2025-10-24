@@ -155,6 +155,7 @@ func (m *Mount) Ensure(pretend bool) error {
 		if exists {
 			log.Debug().Msgf("mount already setup: %s (%s)", m.Spec, m.MountPoint)
 		} else {
+			// TODO make the d
 			// this is the only spot we actually have to do anything other than log
 			log.Debug().Msgf("mount being setup: %s (%s)", m.Spec, m.MountPoint)
 			// vers, err := p.Install()
