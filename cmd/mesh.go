@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2025 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -33,29 +33,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// masterCmd represents the master command
-var masterCmd = &cobra.Command{
-	Use:   "master",
-	Short: "commands for master functionality",
-	Long: `Run and configure the master:
+// meshCmd represents the mesh command
+var meshCmd = &cobra.Command{
+	Use:   "mesh",
+	Short: "commands for mesh functionality",
+	Long: `Run and configure the mesh:
 
-To start the master process:
-# govern master run`,
+To start the mesh process:
+# govern mesh run`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// unimplented
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(masterCmd)
+	rootCmd.AddCommand(meshCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// masterCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// meshCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// masterCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// meshCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
