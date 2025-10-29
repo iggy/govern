@@ -60,6 +60,7 @@ type facts struct {
 	Network     NetworkFacts
 	Storage     StorageFacts
 	Services    ServiceFacts
+	Ceph        CephFacts
 }
 
 // Facts holds facts about the system
