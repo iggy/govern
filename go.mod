@@ -5,7 +5,7 @@ go 1.24.2
 require (
 	dario.cat/mergo v1.0.2
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/fsouza/go-dockerclient v1.12.2
+	github.com/fsouza/go-dockerclient v1.12.3
 	github.com/google/uuid v1.6.0
 	github.com/hmdsefi/gograph v0.7.0
 	github.com/jaypipes/ghw v0.20.0
@@ -33,7 +33,7 @@ require (
 	github.com/cockroachdb/pebble v0.0.0-20221207173255-0f086d933dac // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/docker/docker v28.3.3+incompatible // indirect
+	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
