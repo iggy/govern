@@ -8,7 +8,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.12.3
 	github.com/google/uuid v1.6.0
 	github.com/hmdsefi/gograph v0.7.0
-	github.com/jaypipes/ghw v0.20.0
+	github.com/jaypipes/ghw v0.21.2
 	github.com/lni/dragonboat/v4 v4.0.0-20250723143628-076c7f6497dc
 	github.com/lni/goutils v1.4.0
 	github.com/rs/zerolog v1.34.0
