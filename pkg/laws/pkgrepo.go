@@ -72,49 +72,112 @@ func (r *PackageRepo) Ensure(pretend bool) error {
 		if err != nil {
 			log.Error().Err(err).Msg("alpine package repo: couldn't check existing repo config")
 		}
-		if !isitin {
-			if pretend {
-				log.Info().Str("name", r.Name).Str("contents", r.Contents).Msg("adding package repo")
+
+		// Handle based on desired state
+		if r.State == "absent" {
+			// Repo should be absent
+			if isitin {
+				if pretend {
+					log.Info().Str("name", r.Name).Str("contents", r.Contents).Msg("removing package repo")
+				} else {
+					// Remove the repo line from /etc/apk/repositories
+					err := removeLineFromFile(r.Contents, "/etc/apk/repositories")
+					if err != nil {
+						log.Error().Err(err).Str("contents", r.Contents).Msg("failed to remove repo from /e/a/r")
+						return err
+					}
+					log.Info().Str("name", r.Name).Str("contents", r.Contents).Msg("removed package repo")
+					// TODO run update after removing repo
+				}
 			} else {
-				// first lets handle the key
-				// TODO should we check if it exists already?
-				if r.Key == "" {
-					log.Error().Interface("pkgrepo", r).Msg("key isn't set")
-					return fmt.Errorf("pkgrepo key isn't set: %s", r.Name)
-				}
-				c := &http.Client{}
-				resp, err := c.Get(r.Key)
-				if err != nil {
-					log.Error().Err(err).Str("key", r.Key).Msg("get: failed to get gpg key")
-				}
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Error().Err(err).Str("key", r.Key).Msg("read: failed to get gpg key")
-				}
-				gpgSplit := strings.Split(r.Key, "/")
-				outfileName := gpgSplit[len(gpgSplit)-1]
-				outfilePath := path.Join("/etc/apk/keys", outfileName)
-				err = os.WriteFile(outfilePath, body, 0755)
-				if err != nil {
-					log.Error().Err(err).Str("key", r.Key).Msg("failed to write gpg key")
-				}
+				log.Debug().Str("name", r.Name).Str("contents", r.Contents).Msg("package repo already absent")
+			}
+		} else {
+			// Repo should be present (default behavior)
+			if !isitin {
+				if pretend {
+					log.Info().Str("name", r.Name).Str("contents", r.Contents).Msg("adding package repo")
+				} else {
+					// first lets handle the key
+					// TODO should we check if it exists already?
+					if r.Key == "" {
+						log.Error().Interface("pkgrepo", r).Msg("key isn't set")
+						return fmt.Errorf("pkgrepo key isn't set: %s", r.Name)
+					}
+					c := &http.Client{}
+					resp, err := c.Get(r.Key)
+					if err != nil {
+						log.Error().Err(err).Str("key", r.Key).Msg("get: failed to get gpg key")
+					}
+					body, err := io.ReadAll(resp.Body)
+					if err != nil {
+						log.Error().Err(err).Str("key", r.Key).Msg("read: failed to get gpg key")
+					}
+					gpgSplit := strings.Split(r.Key, "/")
+					outfileName := gpgSplit[len(gpgSplit)-1]
+					outfilePath := path.Join("/etc/apk/keys", outfileName)
+					err = os.WriteFile(outfilePath, body, 0755)
+					if err != nil {
+						log.Error().Err(err).Str("key", r.Key).Msg("failed to write gpg key")
+					}
 
-				// now add the repo url to /etc/apk/repositories
-				ear, err := os.OpenFile("/etc/apk/repositories", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				if err != nil {
-					log.Error().Err(err).Str("contents", r.Contents).Msg("failed to open /e/a/r")
-
+					// now add the repo url to /etc/apk/repositories
+					ear, err := os.OpenFile("/etc/apk/repositories", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					if err != nil {
+						log.Error().Err(err).Str("contents", r.Contents).Msg("failed to open /e/a/r")
+						return err
+					}
+					defer ear.Close()
+					_, err = ear.Write(bytes.NewBufferString(r.Contents + "\n").Bytes())
+					if err != nil {
+						log.Error().Err(err).Str("contents", r.Contents).Msg("failed to write to /e/a/r")
+						return err
+					}
+					log.Info().Str("name", r.Name).Str("contents", r.Contents).Msg("added package repo")
+					// TODO run update after adding repo
 				}
-				_, err = ear.Write(bytes.NewBufferString(r.Contents + "\n").Bytes())
-				if err != nil {
-					log.Error().Err(err).Str("contents", r.Contents).Msg("failed to write to /e/a/r")
-				}
-				// TODO run update after adding repo
+			} else {
+				log.Debug().Str("name", r.Name).Str("contents", r.Contents).Msg("package repo already present")
 			}
 		}
 	case "debian":
 		// should we try add-apt-repo first and then fallback to the manual way?
 	}
+	return nil
+}
+
+func removeLineFromFile(line, file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		log.Error().Err(err).Str("file", file).Str("line", line).Msg("failed to open file for reading")
+		return err
+	}
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if scanner.Text() != line {
+			lines = append(lines, scanner.Text())
+		}
+	}
+	f.Close()
+
+	if err := scanner.Err(); err != nil {
+		log.Error().Err(err).Str("file", file).Msg("failed to scan file")
+		return err
+	}
+
+	// Write back the file without the removed line
+	content := strings.Join(lines, "\n")
+	if len(lines) > 0 {
+		content += "\n"
+	}
+	err = os.WriteFile(file, []byte(content), 0644)
+	if err != nil {
+		log.Error().Err(err).Str("file", file).Msg("failed to write file")
+		return err
+	}
+
 	return nil
 }
 
