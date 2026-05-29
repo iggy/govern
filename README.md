@@ -43,7 +43,7 @@ i.e. what can I control on my system
 
 ## TODO
 
-* go embed config files
+* go embed config files (so you could ship a single static binary that can bootstrap a new system)
 
 ### General
 * write your yaml parser? none of the options out there merge documents
