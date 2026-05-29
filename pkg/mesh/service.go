@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
-	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lni/dragonboat/v4"
-	"github.com/lni/dragonboat/v4/config"
-	"github.com/lni/dragonboat/v4/statemachine"
-	"github.com/lni/goutils/syncutil"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/rs/zerolog"
 
 	"github.com/iggy/govern/pkg/facts"
@@ -20,178 +21,412 @@ import (
 )
 
 const (
-	DefaultShardID = 1
+	// topicCommands carries Commands fanned out to the whole mesh.
+	topicCommands = "govern/commands/v1"
+	// topicResults carries CommandResults flowing back to broadcast origins.
+	topicResults = "govern/results/v1"
+	// rpcProtocol is the direct request/reply stream protocol for targeted
+	// commands and fact queries.
+	rpcProtocol protocol.ID = "/govern/rpc/1.0.0"
 )
 
-type Service struct {
-	nodeHost  *dragonboat.NodeHost
-	shardID   uint64
-	replicaID uint64
-	dataDir   string
-	raftAddr  string
-	stopper   *syncutil.Stopper
-	logger    zerolog.Logger
-}
-
+// Config configures the mesh Service. It is intentionally small – there are no
+// replica IDs, quorum sizes, or membership bookkeeping. A node needs to know
+// where to listen, who to bootstrap from, and which mesh (rendezvous) to join.
 type Config struct {
-	ReplicaID          uint64
-	ShardID            uint64
-	RaftAddress        string
-	DataDir            string
-	InitialMembers     map[uint64]string
-	Join               bool
-	RTTMillisecond     uint64
-	ElectionRTT        uint64
-	HeartbeatRTT       uint64
-	SnapshotEntries    uint64
-	CompactionOverhead uint64
+	ListenAddrs    []string
+	BootstrapPeers []string
+	Rendezvous     string
+	DataDir        string
+	// Private hints the node is behind NAT (enables AutoRelay reservations).
+	Private bool
 }
 
-func NewService(cfg Config, logger zerolog.Logger) (*Service, error) {
-	if cfg.ShardID == 0 {
-		cfg.ShardID = DefaultShardID
-	}
-	if cfg.RTTMillisecond == 0 {
-		cfg.RTTMillisecond = 200
-	}
-	if cfg.ElectionRTT == 0 {
-		cfg.ElectionRTT = 10
-	}
-	if cfg.HeartbeatRTT == 0 {
-		cfg.HeartbeatRTT = 1
-	}
-	if cfg.SnapshotEntries == 0 {
-		cfg.SnapshotEntries = 10
-	}
-	if cfg.CompactionOverhead == 0 {
-		cfg.CompactionOverhead = 5
-	}
+// Service is the masterless mesh node. It owns the libp2p host, a GossipSub
+// router for broadcast/collect, and a stream handler for targeted RPC.
+//
+// It replaces the previous Raft (dragonboat) implementation. There is no
+// leader, no replicated log, and no shared cluster state: every operation is
+// fire-and-forget fan-out with best-effort result collection.
+type Service struct {
+	host   *Host
+	ps     *pubsub.PubSub
+	cmdT   *pubsub.Topic
+	resT   *pubsub.Topic
+	cmdSub *pubsub.Subscription
+	resSub *pubsub.Subscription
+	logger zerolog.Logger
 
-	dataDir := filepath.Join(cfg.DataDir, fmt.Sprintf("node%d", cfg.ReplicaID))
+	hostname string
 
-	nhc := config.NodeHostConfig{
-		WALDir:         dataDir,
-		NodeHostDir:    dataDir,
-		RTTMillisecond: cfg.RTTMillisecond,
-		RaftAddress:    cfg.RaftAddress,
-	}
+	// pending maps a broadcast command ID to a channel collecting results from
+	// peers. Only the initiator of a broadcast registers a collector.
+	mu      sync.Mutex
+	pending map[string]chan *CommandResult
 
-	nh, err := dragonboat.NewNodeHost(nhc)
+	stopOnce sync.Once
+	cancel   context.CancelFunc
+}
+
+// NewService builds the libp2p host and wires up pubsub + the RPC handler.
+func NewService(ctx context.Context, cfg Config, logger zerolog.Logger) (*Service, error) {
+	logger = logger.With().Str("component", "mesh").Logger()
+
+	h, err := NewHost(ctx, HostConfig{
+		ListenAddrs:              cfg.ListenAddrs,
+		BootstrapPeers:           cfg.BootstrapPeers,
+		Rendezvous:               cfg.Rendezvous,
+		DataDir:                  cfg.DataDir,
+		ForceReachabilityPrivate: cfg.Private,
+	}, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create NodeHost: %w", err)
+		return nil, err
 	}
 
-	rc := config.Config{
-		ReplicaID:          cfg.ReplicaID,
-		ShardID:            cfg.ShardID,
-		ElectionRTT:        cfg.ElectionRTT,
-		HeartbeatRTT:       cfg.HeartbeatRTT,
-		CheckQuorum:        true,
-		SnapshotEntries:    cfg.SnapshotEntries,
-		CompactionOverhead: cfg.CompactionOverhead,
+	ps, err := pubsub.NewGossipSub(ctx, h.Host())
+	if err != nil {
+		h.Close()
+		return nil, fmt.Errorf("failed to create gossipsub: %w", err)
 	}
 
-	createSM := func(shardID, replicaID uint64) statemachine.IStateMachine {
-		return NewMeshStateMachine(shardID, replicaID)
+	cmdTopic, err := ps.Join(topicCommands)
+	if err != nil {
+		h.Close()
+		return nil, fmt.Errorf("failed to join commands topic: %w", err)
+	}
+	resTopic, err := ps.Join(topicResults)
+	if err != nil {
+		h.Close()
+		return nil, fmt.Errorf("failed to join results topic: %w", err)
 	}
 
-	if err := nh.StartReplica(cfg.InitialMembers, cfg.Join, createSM, rc); err != nil {
-		nh.Close()
-		return nil, fmt.Errorf("failed to start replica: %w", err)
+	cmdSub, err := cmdTopic.Subscribe()
+	if err != nil {
+		h.Close()
+		return nil, fmt.Errorf("failed to subscribe to commands: %w", err)
+	}
+	resSub, err := resTopic.Subscribe()
+	if err != nil {
+		h.Close()
+		return nil, fmt.Errorf("failed to subscribe to results: %w", err)
 	}
 
-	return &Service{
-		nodeHost:  nh,
-		shardID:   cfg.ShardID,
-		replicaID: cfg.ReplicaID,
-		dataDir:   dataDir,
-		raftAddr:  cfg.RaftAddress,
-		stopper:   syncutil.NewStopper(),
-		logger:    logger.With().Str("component", "mesh").Logger(),
-	}, nil
+	hostname, _ := os.Hostname()
+
+	s := &Service{
+		host:     h,
+		ps:       ps,
+		cmdT:     cmdTopic,
+		resT:     resTopic,
+		cmdSub:   cmdSub,
+		resSub:   resSub,
+		logger:   logger,
+		hostname: hostname,
+		pending:  make(map[string]chan *CommandResult),
+	}
+
+	// Targeted request/reply: peers open a stream, send one Command, read one
+	// CommandResult back. This is the clean analog of Salt's return model.
+	h.Host().SetStreamHandler(rpcProtocol, s.handleRPC)
+
+	return s, nil
 }
 
+// Start begins advertising on the rendezvous key and consuming the pubsub
+// topics. It returns immediately; the loops run until Stop or ctx cancellation.
 func (s *Service) Start(ctx context.Context) error {
-	s.logger.Info().Msg("starting mesh service")
+	ctx, s.cancel = context.WithCancel(ctx)
 
-	s.stopper.RunWorker(func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+	s.host.Advertise(ctx)
 
-		for {
+	go s.consumeCommands(ctx)
+	go s.consumeResults(ctx)
+
+	s.logger.Info().Str("peer_id", s.host.ID().String()).Msg("mesh service started")
+	return nil
+}
+
+// Stop shuts down the service and underlying host.
+func (s *Service) Stop() error {
+	s.stopOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.cmdSub.Cancel()
+		s.resSub.Cancel()
+		_ = s.cmdT.Close()
+		_ = s.resT.Close()
+	})
+	return s.host.Close()
+}
+
+// consumeCommands processes broadcast Commands targeted at this node.
+func (s *Service) consumeCommands(ctx context.Context) {
+	self := s.host.ID()
+	for {
+		msg, err := s.cmdSub.Next(ctx)
+		if err != nil {
+			return // context cancelled
+		}
+		// Ignore our own broadcasts; the initiator runs locally itself.
+		if msg.ReceivedFrom == self || (msg.GetFrom() == self) {
+			continue
+		}
+
+		var cmd Command
+		if err := json.Unmarshal(msg.Data, &cmd); err != nil {
+			s.logger.Warn().Err(err).Msg("dropping malformed command")
+			continue
+		}
+
+		if !s.matchesTarget(cmd.Target) {
+			continue
+		}
+
+		go s.runAndReturn(ctx, cmd)
+	}
+}
+
+// runAndReturn executes a broadcast command locally and publishes the result
+// back on the results topic for the origin to collect.
+func (s *Service) runAndReturn(ctx context.Context, cmd Command) {
+	result := s.ExecuteCommand(ctx, cmd)
+	data, err := json.Marshal(result)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to marshal result")
+		return
+	}
+	if err := s.resT.Publish(ctx, data); err != nil {
+		s.logger.Error().Err(err).Msg("failed to publish result")
+	}
+}
+
+// consumeResults delivers incoming results to the collector waiting on the
+// matching command ID (if this node initiated that broadcast).
+func (s *Service) consumeResults(ctx context.Context) {
+	for {
+		msg, err := s.resSub.Next(ctx)
+		if err != nil {
+			return
+		}
+		var result CommandResult
+		if err := json.Unmarshal(msg.Data, &result); err != nil {
+			continue
+		}
+		s.mu.Lock()
+		ch, ok := s.pending[result.ID]
+		s.mu.Unlock()
+		if ok {
 			select {
-			case <-ticker.C:
-				status, err := s.GetStatus()
-				if err != nil {
-					s.logger.Error().Err(err).Msg("failed to get mesh status")
-					continue
-				}
-				s.logger.Debug().
-					Bool("is_leader", status.IsLeader).
-					Int("node_count", len(status.Nodes)).
-					Msg("mesh status")
-
-			case <-s.stopper.ShouldStop():
-				return
+			case ch <- &result:
 			case <-ctx.Done():
 				return
+			default:
+				// collector buffer full; drop to avoid blocking the consumer
 			}
 		}
-	})
-
-	return nil
+	}
 }
 
-func (s *Service) Stop() error {
-	s.logger.Info().Msg("stopping mesh service")
-	s.stopper.Stop()
-	s.nodeHost.Close()
-	return nil
+// Broadcast publishes a command to the whole mesh and collects results from all
+// matching peers until the context deadline. The local node is included.
+func (s *Service) Broadcast(ctx context.Context, cmd Command) ([]*CommandResult, error) {
+	if cmd.ID == "" {
+		cmd.ID = uuid.New().String()
+	}
+	cmd.Origin = s.host.ID().String()
+	cmd.Timestamp = time.Now()
+
+	collector := make(chan *CommandResult, 256)
+	s.mu.Lock()
+	s.pending[cmd.ID] = collector
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.pending, cmd.ID)
+		s.mu.Unlock()
+	}()
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal command: %w", err)
+	}
+	if err := s.cmdT.Publish(ctx, data); err != nil {
+		return nil, fmt.Errorf("failed to publish command: %w", err)
+	}
+
+	results := []*CommandResult{}
+	// Always include the local result if this node matches the target.
+	if s.matchesTarget(cmd.Target) {
+		results = append(results, s.ExecuteCommand(ctx, cmd))
+	}
+
+	for {
+		select {
+		case r := <-collector:
+			results = append(results, r)
+		case <-ctx.Done():
+			return results, nil
+		}
+	}
 }
 
-func (s *Service) ExecuteCommand(ctx context.Context, cmd Command) (*CommandResult, error) {
+// Dispatch sends a command directly to specific peers over an RPC stream and
+// collects their replies. This is targeted request/reply – no pubsub involved.
+func (s *Service) Dispatch(ctx context.Context, cmd Command, peerIDs []string) ([]*CommandResult, error) {
+	if cmd.ID == "" {
+		cmd.ID = uuid.New().String()
+	}
+	cmd.Origin = s.host.ID().String()
+	cmd.Timestamp = time.Now()
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		results []*CommandResult
+	)
+	for _, pidStr := range peerIDs {
+		pid, err := peer.Decode(pidStr)
+		if err != nil {
+			mu.Lock()
+			results = append(results, &CommandResult{
+				ID: cmd.ID, PeerID: pidStr, Success: false,
+				Error: fmt.Sprintf("invalid peer id: %v", err), Timestamp: time.Now(),
+			})
+			mu.Unlock()
+			continue
+		}
+
+		// A targeted command to ourselves runs locally.
+		if pid == s.host.ID() {
+			r := s.ExecuteCommand(ctx, cmd)
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+			continue
+		}
+
+		wg.Add(1)
+		go func(pid peer.ID) {
+			defer wg.Done()
+			r := s.sendRPC(ctx, pid, cmd)
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+		}(pid)
+	}
+	wg.Wait()
+	return results, nil
+}
+
+// sendRPC opens a stream to a peer, sends the command, and reads one result.
+func (s *Service) sendRPC(ctx context.Context, pid peer.ID, cmd Command) *CommandResult {
+	fail := func(err error) *CommandResult {
+		return &CommandResult{
+			ID: cmd.ID, PeerID: pid.String(), Success: false,
+			Error: err.Error(), Timestamp: time.Now(),
+		}
+	}
+
+	// Ensure we have addresses for the peer; resolve via DHT if not.
+	if len(s.host.Host().Peerstore().Addrs(pid)) == 0 {
+		if info, err := s.host.FindPeer(ctx, pid); err == nil {
+			s.host.Host().Peerstore().AddAddrs(pid, info.Addrs, time.Hour)
+		}
+	}
+
+	stream, err := s.host.Host().NewStream(ctx, pid, rpcProtocol)
+	if err != nil {
+		return fail(fmt.Errorf("failed to open stream: %w", err))
+	}
+	defer stream.Close()
+
+	if dl, ok := ctx.Deadline(); ok {
+		_ = stream.SetDeadline(dl)
+	}
+
+	if err := json.NewEncoder(stream).Encode(cmd); err != nil {
+		return fail(fmt.Errorf("failed to send command: %w", err))
+	}
+	_ = stream.CloseWrite()
+
+	var result CommandResult
+	if err := json.NewDecoder(stream).Decode(&result); err != nil {
+		return fail(fmt.Errorf("failed to read result: %w", err))
+	}
+	return &result
+}
+
+// handleRPC serves an inbound targeted command: read one Command, execute it,
+// write one CommandResult.
+func (s *Service) handleRPC(stream network.Stream) {
+	defer stream.Close()
+	_ = stream.SetDeadline(time.Now().Add(5 * time.Minute))
+
+	var cmd Command
+	if err := json.NewDecoder(stream).Decode(&cmd); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to decode RPC command")
+		return
+	}
+
+	result := s.ExecuteCommand(context.Background(), cmd)
+	if err := json.NewEncoder(stream).Encode(result); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to encode RPC result")
+	}
+}
+
+// matchesTarget evaluates a Command's Target against this node's identity.
+// Selectors are checked locally, so no node needs a global inventory.
+func (s *Service) matchesTarget(t Target) bool {
+	if t.IsEmpty() {
+		return true
+	}
+	for _, h := range t.Hostnames {
+		if h == s.hostname {
+			return true
+		}
+	}
+	self := s.host.ID().String()
+	for _, p := range t.PeerIDs {
+		if p == self {
+			return true
+		}
+	}
+	return false
+}
+
+// ExecuteCommand runs a command on the local node and returns its result.
+func (s *Service) ExecuteCommand(ctx context.Context, cmd Command) *CommandResult {
 	result := &CommandResult{
 		ID:        cmd.ID,
+		PeerID:    s.host.ID().String(),
+		Hostname:  s.hostname,
 		Timestamp: time.Now(),
 	}
 
+	var (
+		out interface{}
+		err error
+	)
 	switch cmd.Type {
 	case CommandTypeExec:
-		execResult, err := s.executeExecCommand(ctx, cmd)
-		if err != nil {
-			result.Success = false
-			result.Error = err.Error()
-		} else {
-			result.Success = true
-			result.Output, _ = json.Marshal(execResult)
-		}
-
+		out, err = s.executeExecCommand(ctx, cmd)
 	case CommandTypeFacts:
-		factsResult, err := s.executeFactsCommand(ctx, cmd)
-		if err != nil {
-			result.Success = false
-			result.Error = err.Error()
-		} else {
-			result.Success = true
-			result.Output, _ = json.Marshal(factsResult)
-		}
-
+		out, err = s.executeFactsCommand(ctx, cmd)
 	case CommandTypeApplyLaws:
-		lawsResult, err := s.executeApplyLawsCommand(ctx, cmd)
-		if err != nil {
-			result.Success = false
-			result.Error = err.Error()
-		} else {
-			result.Success = true
-			result.Output, _ = json.Marshal(lawsResult)
-		}
-
+		out, err = s.executeApplyLawsCommand(ctx, cmd)
 	default:
-		result.Success = false
-		result.Error = fmt.Sprintf("unknown command type: %s", cmd.Type)
+		err = fmt.Errorf("unknown command type: %s", cmd.Type)
 	}
 
-	return result, nil
+	if err != nil {
+		result.Success = false
+		result.Error = err.Error()
+	} else {
+		result.Success = true
+		result.Output, _ = json.Marshal(out)
+	}
+	return result
 }
 
 func (s *Service) executeExecCommand(ctx context.Context, cmd Command) (*ExecResult, error) {
@@ -204,17 +439,12 @@ func (s *Service) executeExecCommand(ctx context.Context, cmd Command) (*ExecRes
 	if payload.WorkDir != "" {
 		execCmd.Dir = payload.WorkDir
 	}
-	if len(payload.Env) > 0 {
-		for k, v := range payload.Env {
-			execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
+	for k, v := range payload.Env {
+		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	stdout, err := execCmd.Output()
-	result := &ExecResult{
-		Stdout: string(stdout),
-	}
-
+	result := &ExecResult{Stdout: string(stdout)}
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			result.ExitCode = exitError.ExitCode()
@@ -223,7 +453,6 @@ func (s *Service) executeExecCommand(ctx context.Context, cmd Command) (*ExecRes
 			return nil, fmt.Errorf("command execution failed: %w", err)
 		}
 	}
-
 	return result, nil
 }
 
@@ -232,7 +461,6 @@ func (s *Service) executeFactsCommand(ctx context.Context, cmd Command) (interfa
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
 		return nil, fmt.Errorf("invalid facts payload: %w", err)
 	}
-
 	return facts.Facts, nil
 }
 
@@ -246,10 +474,7 @@ func (s *Service) executeApplyLawsCommand(ctx context.Context, cmd Command) (int
 	for _, lawFile := range payload.LawFiles {
 		vertices, err := laws.ParseFiles(lawFile)
 		if err != nil {
-			results[lawFile] = map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			}
+			results[lawFile] = map[string]interface{}{"success": false, "error": err.Error()}
 			continue
 		}
 
@@ -260,98 +485,53 @@ func (s *Service) executeApplyLawsCommand(ctx context.Context, cmd Command) (int
 				"law_count": len(vertices),
 				"message":   "would apply laws (dry run)",
 			}
-		} else {
-			applied := 0
-			errors := []string{}
-			for _, vertex := range vertices {
-				lawNode := vertex.Label()
-				if lawNode.Law != nil {
-					if err := lawNode.Law.Ensure(false); err != nil {
-						errors = append(errors, fmt.Sprintf("%s: %v", lawNode.Name, err))
-					} else {
-						applied++
-					}
+			continue
+		}
+
+		applied := 0
+		errs := []string{}
+		for _, vertex := range vertices {
+			lawNode := vertex.Label()
+			if lawNode.Law != nil {
+				if err := lawNode.Law.Ensure(false); err != nil {
+					errs = append(errs, fmt.Sprintf("%s: %v", lawNode.Name, err))
+				} else {
+					applied++
 				}
 			}
-
-			results[lawFile] = map[string]interface{}{
-				"success":    len(errors) == 0,
-				"applied":    applied,
-				"total_laws": len(vertices),
-				"errors":     errors,
-			}
+		}
+		results[lawFile] = map[string]interface{}{
+			"success":    len(errs) == 0,
+			"applied":    applied,
+			"total_laws": len(vertices),
+			"errors":     errs,
 		}
 	}
-
 	return results, nil
 }
 
-func (s *Service) BroadcastCommand(ctx context.Context, cmd Command) (map[uint64]*CommandResult, error) {
-	if cmd.ID == "" {
-		cmd.ID = uuid.New().String()
-	}
-	cmd.Timestamp = time.Now()
-
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal command: %w", err)
-	}
-
-	cs := s.nodeHost.GetNoOPSession(s.shardID)
-	_, err = s.nodeHost.SyncPropose(ctx, cs, data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to propose command: %w", err)
-	}
-
-	localResult, err := s.ExecuteCommand(ctx, cmd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute command locally: %w", err)
-	}
-
-	results := make(map[uint64]*CommandResult)
-	results[s.replicaID] = localResult
-
-	return results, nil
-}
-
-func (s *Service) GetStatus() (*MeshStatus, error) {
-	leaderID, term, valid, err := s.nodeHost.GetLeaderID(s.shardID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get leader ID: %w", err)
-	}
-	_ = term
-
-	membership, err := s.nodeHost.SyncGetShardMembership(context.Background(), s.shardID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get shard membership: %w", err)
-	}
-
-	nodes := make([]Node, 0, len(membership.Nodes))
-	for replicaID, addr := range membership.Nodes {
-		status := "follower"
-		if valid && replicaID == leaderID {
-			status = "leader"
-		}
-		nodes = append(nodes, Node{
-			ID:      replicaID,
-			Address: addr,
-			Status:  status,
-		})
-	}
-
+// GetStatus returns this node's current view of the mesh.
+func (s *Service) GetStatus() *MeshStatus {
 	return &MeshStatus{
-		NodeID:    s.replicaID,
-		ShardID:   s.shardID,
-		IsLeader:  valid && s.replicaID == leaderID,
-		Nodes:     nodes,
-		Timestamp: time.Now(),
-	}, nil
+		PeerID:     s.host.ID().String(),
+		Hostname:   s.hostname,
+		Addrs:      multiaddrsToStrings(s.host.Addrs()),
+		Rendezvous: s.host.rendezvous,
+		Peers:      s.GetNodes(),
+		Timestamp:  time.Now(),
+	}
 }
 
-func (s *Service) GetNodes() ([]Node, error) {
-	status, err := s.GetStatus()
-	if err != nil {
-		return nil, err
+// GetNodes returns the peers this node currently knows about.
+func (s *Service) GetNodes() []Node {
+	peers := s.host.Peers()
+	nodes := make([]Node, 0, len(peers))
+	for _, p := range peers {
+		addrs := make([]string, 0, len(p.Addrs))
+		for _, a := range p.Addrs {
+			addrs = append(addrs, a.String())
+		}
+		nodes = append(nodes, Node{PeerID: p.ID.String(), Addrs: addrs})
 	}
-	return status.Nodes, nil
+	return nodes
 }

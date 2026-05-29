@@ -13,6 +13,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// HTTPServer is a thin LOCAL control socket. The govern CLI talks to its own
+// node over this API; the node then fans the request out across the mesh via
+// libp2p (GossipSub broadcast or targeted RPC streams). It is intended to
+// listen on localhost only – it is not the node-to-node transport.
 type HTTPServer struct {
 	service *Service
 	server  *http.Server
@@ -28,24 +32,21 @@ func NewHTTPServer(service *Service, addr string, logger zerolog.Logger) *HTTPSe
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", h.handleStatus)
 	mux.HandleFunc("/nodes", h.handleNodes)
-	mux.HandleFunc("/command", h.handleCommand)
-	mux.HandleFunc("/broadcast", h.handleBroadcast)
+	mux.HandleFunc("/exec", h.handleLocal)         // run on local node only
+	mux.HandleFunc("/broadcast", h.handleBroadcast) // fan out to whole mesh
+	mux.HandleFunc("/dispatch", h.handleDispatch)   // targeted to specific peers
 
-	h.server = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
+	h.server = &http.Server{Addr: addr, Handler: mux}
 	return h
 }
 
 func (h *HTTPServer) Start() error {
-	h.logger.Info().Str("addr", h.server.Addr).Msg("starting HTTP server")
+	h.logger.Info().Str("addr", h.server.Addr).Msg("starting local control socket")
 	return h.server.ListenAndServe()
 }
 
 func (h *HTTPServer) Stop(ctx context.Context) error {
-	h.logger.Info().Msg("stopping HTTP server")
+	h.logger.Info().Msg("stopping local control socket")
 	return h.server.Shutdown(ctx)
 }
 
@@ -54,16 +55,7 @@ func (h *HTTPServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	status, err := h.service.GetStatus()
-	if err != nil {
-		h.logger.Error().Err(err).Msg("failed to get status")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	writeJSON(w, h.service.GetStatus())
 }
 
 func (h *HTTPServer) handleNodes(w http.ResponseWriter, r *http.Request) {
@@ -71,94 +63,93 @@ func (h *HTTPServer) handleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	nodes, err := h.service.GetNodes()
-	if err != nil {
-		h.logger.Error().Err(err).Msg("failed to get nodes")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodes)
+	writeJSON(w, h.service.GetNodes())
 }
 
-func (h *HTTPServer) handleCommand(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// handleLocal runs a command on the local node only.
+func (h *HTTPServer) handleLocal(w http.ResponseWriter, r *http.Request) {
+	cmd, ctx, cancel, ok := h.decodeCommand(w, r)
+	if !ok {
 		return
 	}
-
-	var cmd Command
-	if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	if cmd.ID == "" {
-		cmd.ID = uuid.New().String()
-	}
-
-	timeoutStr := r.URL.Query().Get("timeout")
-	timeout := 30 * time.Second
-	if timeoutStr != "" {
-		if t, err := strconv.Atoi(timeoutStr); err == nil {
-			timeout = time.Duration(t) * time.Second
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
-
-	result, err := h.service.ExecuteCommand(ctx, cmd)
-	if err != nil {
-		h.logger.Error().Err(err).Msg("failed to execute command")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeJSON(w, h.service.ExecuteCommand(ctx, cmd))
 }
 
+// handleBroadcast fans a command out to all matching mesh peers and collects
+// results until the timeout elapses.
 func (h *HTTPServer) handleBroadcast(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	cmd, ctx, cancel, ok := h.decodeCommand(w, r)
+	if !ok {
+		return
+	}
+	defer cancel()
+
+	results, err := h.service.Broadcast(ctx, cmd)
+	if err != nil {
+		h.logger.Error().Err(err).Msg("broadcast failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, results)
+}
+
+// handleDispatch sends a command directly to the peers named in ?peers=a,b,c
+// (or the command's Target.PeerIDs) and collects their replies.
+func (h *HTTPServer) handleDispatch(w http.ResponseWriter, r *http.Request) {
+	cmd, ctx, cancel, ok := h.decodeCommand(w, r)
+	if !ok {
+		return
+	}
+	defer cancel()
+
+	peerIDs := cmd.Target.PeerIDs
+	if len(peerIDs) == 0 {
+		http.Error(w, "no target peers specified", http.StatusBadRequest)
 		return
 	}
 
+	results, err := h.service.Dispatch(ctx, cmd, peerIDs)
+	if err != nil {
+		h.logger.Error().Err(err).Msg("dispatch failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, results)
+}
+
+// decodeCommand parses a Command from the request body and derives a timeout
+// context from the ?timeout=<seconds> query parameter (default 30s).
+func (h *HTTPServer) decodeCommand(w http.ResponseWriter, r *http.Request) (Command, context.Context, context.CancelFunc, bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return Command{}, nil, nil, false
+	}
 	var cmd Command
 	if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
+		return Command{}, nil, nil, false
 	}
-
 	if cmd.ID == "" {
 		cmd.ID = uuid.New().String()
 	}
 
-	timeoutStr := r.URL.Query().Get("timeout")
 	timeout := 30 * time.Second
-	if timeoutStr != "" {
-		if t, err := strconv.Atoi(timeoutStr); err == nil {
+	if ts := r.URL.Query().Get("timeout"); ts != "" {
+		if t, err := strconv.Atoi(ts); err == nil {
 			timeout = time.Duration(t) * time.Second
 		}
 	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
-	defer cancel()
-
-	results, err := h.service.BroadcastCommand(ctx, cmd)
-	if err != nil {
-		h.logger.Error().Err(err).Msg("failed to broadcast command")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	return cmd, ctx, cancel, true
 }
 
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// Client is the CLI-side helper for talking to a local node's control socket.
 type Client struct {
 	baseURL string
 	client  *http.Client
@@ -168,117 +159,88 @@ type Client struct {
 func NewClient(baseURL string, logger zerolog.Logger) *Client {
 	return &Client{
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		client:  &http.Client{Timeout: 5 * time.Minute},
 		logger:  logger.With().Str("component", "mesh-client").Logger(),
 	}
 }
 
 func (c *Client) GetStatus(ctx context.Context) (*MeshStatus, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/status", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
 	var status MeshStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+	if err := c.getJSON(ctx, "/status", &status); err != nil {
 		return nil, err
 	}
-
 	return &status, nil
 }
 
 func (c *Client) GetNodes(ctx context.Context) ([]Node, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/nodes", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
 	var nodes []Node
-	if err := json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
+	if err := c.getJSON(ctx, "/nodes", &nodes); err != nil {
 		return nil, err
 	}
-
 	return nodes, nil
 }
 
-func (c *Client) ExecuteCommand(ctx context.Context, cmd Command) (*CommandResult, error) {
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/command",
-		bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
+// ExecuteLocal runs a command on the connected node only.
+func (c *Client) ExecuteLocal(ctx context.Context, cmd Command, timeout time.Duration) (*CommandResult, error) {
 	var result CommandResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := c.postJSON(ctx, "/exec", cmd, timeout, &result); err != nil {
 		return nil, err
 	}
-
 	return &result, nil
 }
 
-func (c *Client) BroadcastCommand(ctx context.Context, cmd Command) (map[uint64]*CommandResult, error) {
-	data, err := json.Marshal(cmd)
-	if err != nil {
+// Broadcast fans a command out to the whole mesh and returns all collected results.
+func (c *Client) Broadcast(ctx context.Context, cmd Command, timeout time.Duration) ([]*CommandResult, error) {
+	var results []*CommandResult
+	if err := c.postJSON(ctx, "/broadcast", cmd, timeout, &results); err != nil {
 		return nil, err
 	}
+	return results, nil
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/broadcast",
-		bytes.NewReader(data))
-	if err != nil {
+// Dispatch sends a command to the peers listed in cmd.Target.PeerIDs.
+func (c *Client) Dispatch(ctx context.Context, cmd Command, timeout time.Duration) ([]*CommandResult, error) {
+	var results []*CommandResult
+	if err := c.postJSON(ctx, "/dispatch", cmd, timeout, &results); err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	return results, nil
+}
 
+func (c *Client) getJSON(ctx context.Context, path string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
 
-	var results map[uint64]*CommandResult
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-		return nil, err
+func (c *Client) postJSON(ctx context.Context, path string, body interface{}, timeout time.Duration, out interface{}) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
 	}
-
-	return results, nil
+	url := fmt.Sprintf("%s%s?timeout=%d", c.baseURL, path, int(timeout.Seconds()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }

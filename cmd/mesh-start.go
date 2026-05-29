@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2026 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,11 +31,10 @@ package cmd
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -47,57 +46,36 @@ import (
 )
 
 var (
-	meshReplicaID      uint64
-	meshRaftAddress    string
-	meshHTTPAddress    string
-	meshDataDir        string
-	meshInitialMembers []string
-	meshJoin           bool
+	meshListenAddrs   []string
+	meshBootstrap     []string
+	meshRendezvous    string
+	meshControlAddr   string
+	meshDataDir       string
+	meshPrivate       bool
 )
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the mesh",
-	Long: `Start the mesh node with the specified configuration.
+	Short: "Start the mesh node",
+	Long: `Start a govern mesh node.
+
+The mesh is masterless: there is no leader, no quorum, and no shared cluster
+state. Nodes discover each other over mDNS (LAN) and a Kademlia DHT (WAN),
+traverse NAT via hole punching and relays, and communicate over encrypted
+libp2p streams. Any node with a routable address can serve as a bootstrap/relay
+peer for NAT'd nodes – such peers hold no authority over the mesh.
 
 Examples:
-  # Start first node (creates cluster)
-  govern mesh start --replica-id=1 --raft-address=localhost:63001 --http-address=localhost:8001
+  # First/seed node on a public address (others bootstrap from it)
+  govern mesh start --listen=/ip4/0.0.0.0/tcp/63001 --listen=/ip4/0.0.0.0/udp/63001/quic-v1
 
-  # Start additional nodes (joins existing cluster)
-  govern mesh start --replica-id=2 --raft-address=localhost:63002 --http-address=localhost:8002 --join --initial-members=1=localhost:63001
+  # A node that bootstraps from a known peer (note the /p2p/<peerid> suffix)
+  govern mesh start --bootstrap=/ip4/203.0.113.10/udp/63001/quic-v1/p2p/12D3Koo...
 
-  # Start with custom data directory
-  govern mesh start --replica-id=1 --raft-address=localhost:63001 --http-address=localhost:8001 --data-dir=/var/lib/govern`,
+  # A NAT'd node that should reserve relay slots
+  govern mesh start --bootstrap=/ip4/203.0.113.10/udp/63001/quic-v1/p2p/12D3Koo... --private`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshReplicaID == 0 {
-			log.Fatal().Msg("replica-id is required")
-		}
-		if meshRaftAddress == "" {
-			log.Fatal().Msg("raft-address is required")
-		}
-		if meshHTTPAddress == "" {
-			log.Fatal().Msg("http-address is required")
-		}
-
-		initialMembers := make(map[uint64]string)
-		if !meshJoin {
-			initialMembers[meshReplicaID] = meshRaftAddress
-		} else {
-			for _, member := range meshInitialMembers {
-				parts := strings.Split(member, "=")
-				if len(parts) != 2 {
-					log.Fatal().Str("member", member).Msg("invalid initial member format, expected id=address")
-				}
-				id, err := strconv.ParseUint(parts[0], 10, 64)
-				if err != nil {
-					log.Fatal().Str("member", member).Err(err).Msg("invalid replica ID in initial member")
-				}
-				initialMembers[id] = parts[1]
-			}
-		}
-
 		if meshDataDir == "" {
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
@@ -105,44 +83,44 @@ Examples:
 			}
 			meshDataDir = filepath.Join(homeDir, ".govern", "mesh-data")
 		}
-
-		if err := os.MkdirAll(meshDataDir, 0755); err != nil {
+		if err := os.MkdirAll(meshDataDir, 0o700); err != nil {
 			log.Fatal().Err(err).Str("dir", meshDataDir).Msg("failed to create data directory")
-		}
-
-		cfg := mesh.Config{
-			ReplicaID:      meshReplicaID,
-			RaftAddress:    meshRaftAddress,
-			DataDir:        meshDataDir,
-			InitialMembers: initialMembers,
-			Join:           meshJoin,
-		}
-
-		service, err := mesh.NewService(cfg, log.Logger)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to create mesh service")
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
+		cfg := mesh.Config{
+			ListenAddrs:    meshListenAddrs,
+			BootstrapPeers: meshBootstrap,
+			Rendezvous:     meshRendezvous,
+			DataDir:        meshDataDir,
+			Private:        meshPrivate,
+		}
+
+		service, err := mesh.NewService(ctx, cfg, log.Logger)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create mesh service")
+		}
+
 		if err := service.Start(ctx); err != nil {
 			log.Fatal().Err(err).Msg("failed to start mesh service")
 		}
 
-		httpServer := mesh.NewHTTPServer(service, meshHTTPAddress, log.Logger)
+		// Local control socket: the CLI talks to this node over loopback, and
+		// the node fans requests out across the mesh. Bind to localhost.
+		httpServer := mesh.NewHTTPServer(service, meshControlAddr, log.Logger)
 		go func() {
-			if err := httpServer.Start(); err != nil {
-				log.Error().Err(err).Msg("HTTP server error")
+			if err := httpServer.Start(); err != nil && err != http.ErrServerClosed {
+				log.Error().Err(err).Msg("control socket error")
 			}
 		}()
 
 		log.Info().
-			Uint64("replica_id", meshReplicaID).
-			Str("raft_address", meshRaftAddress).
-			Str("http_address", meshHTTPAddress).
+			Str("control", meshControlAddr).
 			Str("data_dir", meshDataDir).
-			Bool("join", meshJoin).
+			Str("rendezvous", meshRendezvous).
+			Bool("private", meshPrivate).
 			Msg("mesh node started")
 
 		sigChan := make(chan os.Signal, 1)
@@ -156,9 +134,8 @@ Examples:
 		defer shutdownCancel()
 
 		if err := httpServer.Stop(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("failed to stop HTTP server")
+			log.Error().Err(err).Msg("failed to stop control socket")
 		}
-
 		if err := service.Stop(); err != nil {
 			log.Error().Err(err).Msg("failed to stop mesh service")
 		}
@@ -168,21 +145,17 @@ Examples:
 func init() {
 	meshCmd.AddCommand(startCmd)
 
-	startCmd.Flags().Uint64Var(&meshReplicaID, "replica-id", 0, "Unique replica ID for this node")
-	startCmd.Flags().StringVar(&meshRaftAddress, "raft-address", "", "Raft address for this node (host:port)")
-	startCmd.Flags().StringVar(&meshHTTPAddress, "http-address", "", "HTTP API address for this node (host:port)")
-	startCmd.Flags().StringVar(&meshDataDir, "data-dir", "", "Data directory for mesh storage (default: ~/.govern/mesh-data)")
-	startCmd.Flags().StringSliceVar(&meshInitialMembers, "initial-members", nil, "Initial cluster members in format id=address (required when joining)")
-	startCmd.Flags().BoolVar(&meshJoin, "join", false, "Join existing cluster instead of creating new one")
+	startCmd.Flags().StringSliceVar(&meshListenAddrs, "listen", nil, "libp2p listen multiaddrs (default: TCP+QUIC on all interfaces, random port)")
+	startCmd.Flags().StringSliceVar(&meshBootstrap, "bootstrap", nil, "Bootstrap/relay peer multiaddrs (e.g. /ip4/.../udp/63001/quic-v1/p2p/12D3Koo...)")
+	startCmd.Flags().StringVar(&meshRendezvous, "rendezvous", "govern-mesh", "Rendezvous string; nodes sharing it form one mesh")
+	startCmd.Flags().StringVar(&meshControlAddr, "control", "127.0.0.1:8008", "Local control socket address for the CLI")
+	startCmd.Flags().StringVar(&meshDataDir, "data-dir", "", "Data directory (holds the persistent node identity) (default: ~/.govern/mesh-data)")
+	startCmd.Flags().BoolVar(&meshPrivate, "private", false, "Hint that this node is behind NAT (reserve relay slots)")
 
-	startCmd.MarkFlagRequired("replica-id")
-	startCmd.MarkFlagRequired("raft-address")
-	startCmd.MarkFlagRequired("http-address")
-
-	viper.BindPFlag("mesh.replica-id", startCmd.Flags().Lookup("replica-id"))
-	viper.BindPFlag("mesh.raft-address", startCmd.Flags().Lookup("raft-address"))
-	viper.BindPFlag("mesh.http-address", startCmd.Flags().Lookup("http-address"))
+	viper.BindPFlag("mesh.listen", startCmd.Flags().Lookup("listen"))
+	viper.BindPFlag("mesh.bootstrap", startCmd.Flags().Lookup("bootstrap"))
+	viper.BindPFlag("mesh.rendezvous", startCmd.Flags().Lookup("rendezvous"))
+	viper.BindPFlag("mesh.control", startCmd.Flags().Lookup("control"))
 	viper.BindPFlag("mesh.data-dir", startCmd.Flags().Lookup("data-dir"))
-	viper.BindPFlag("mesh.initial-members", startCmd.Flags().Lookup("initial-members"))
-	viper.BindPFlag("mesh.join", startCmd.Flags().Lookup("join"))
+	viper.BindPFlag("mesh.private", startCmd.Flags().Lookup("private"))
 }
