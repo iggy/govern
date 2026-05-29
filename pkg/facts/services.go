@@ -1,4 +1,4 @@
-// Copyright © 2020 Iggy <iggy@theiggy.com>
+// Copyright © 2025 Iggy <iggy@theiggy.com>
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -29,24 +29,10 @@
 
 package facts
 
-import (
-	"github.com/rs/zerolog/log"
-)
-
 // ServiceFacts contains facts about the system services
 type ServiceFacts struct {
 	InstalledServices []string
 	RunningServices   []string
 }
 
-func init() {
-	// var err error
-	// Facts.Network.Interfaces, err = net.Interfaces()
-	// if err != nil {
-	// 	log.Warn().Err(err).Msg("Failed to get list of network interfaces")
-	// }
-	// FIXME should use the init system rather than distro
-	if DistroAlpine() {
-		log.Debug().Msg("service init alpine")
-	}
-}
+func init() {}
