@@ -3,11 +3,9 @@ package laws
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // Mount is a mount point
@@ -42,90 +40,27 @@ type AbsentMount struct {
 }
 
 // UnmarshalYAML implements the Unmarshaler interface
-func (m *Mount) UnmarshalYAML(value *yaml.Node) error {
-	// log.Logger = log.With().Str("unmarshalyaml", "mount").Logger()
-
+func (m *Mount) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	m.Freq = 0
 	m.Pass = 0
 	m.Options = "defaults"
 	m.Present = true
 
-	// var tmp interface{}
-	// var newM Mount
 	type rawMount Mount
-	// err := yaml.NewDecoder(strings.NewReader(value.Value)).Decode(&newM)
-	err := value.Decode((*rawMount)(m)) // this goes into an infinite loop
-	if err != nil && err != io.EOF {
+	if err := unmarshal((*rawMount)(m)); err != nil {
 		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
-
-	// log.Trace().
-	// 	Interface("Node", value).
-	// 	Interface("newM", m).
-	// 	Interface("content", value.Content).
-	// 	Str("value", value.Value).
-	// 	Str("shorttag", value.ShortTag()).
-	// 	Str("longtag", value.LongTag()).
-	// 	Str("anchor", value.Anchor).
-	// 	Msgf("%v", value.Value)
-	// if value.Tag != "!!map" {
-	// 	return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	// }
-
-	// for i, node := range value.Content {
-	// 	log.Trace().Interface("node1", node).Msg("")
-	// 	switch node.Value {
-	// 	case "name":
-	// 		m.Name = value.Content[i+1].Value
-	// 	case "spec":
-	// 		m.Spec = value.Content[i+1].Value
-	// 	case "mount-point":
-	// 		m.MountPoint = value.Content[i+1].Value
-	// 	case "type":
-	// 		m.Type = value.Content[i+1].Value
-	// 	case "options":
-	// 		m.Options = value.Content[i+1].Value
-	// 	case "freq":
-	// 		m.Freq, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 64)
-	// 	case "pass":
-	// 		m.Pass, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 64)
-	// 		// common fields
-	// 	case "after":
-	// 		for _, j := range value.Content[i+1].Content {
-	// 			m.After = append(m.After, j.Value)
-	// 		}
-	// 	case "before":
-	// 		for _, j := range value.Content[i+1].Content {
-	// 			m.Before = append(m.Before, j.Value)
-	// 		}
-
-	// 		// case "":
-	// 		// m. = value.Content[i+1].Value
-	// 		// case "":
-	// 		// m. = value.Content[i+1].Value
-	// 		// case "":
-	// 		// m. = value.Content[i+1].Value
-	// 		// case "":
-	// 		// m. = value.Content[i+1].Value
-	// 	}
-	// }
-	// log.Trace().Interface("m", m).Msg("what's in the box?!?!")
-
-	// os.Exit(0)
-
 	return nil
-
 }
-func (m *AbsentMount) UnmarshalYAML(value *yaml.Node) error {
-	// log.Logger = log.With().Str("unmarshalyaml", "mount").Logger()
 
+func (m *AbsentMount) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	m.Freq = 0
 	m.Pass = 0
 	m.Options = "defaults"
 
 	type rawMount AbsentMount
-	err := value.Decode((*rawMount)(m)) // this goes into an infinite loop
-	if err != nil && err != io.EOF {
+	if err := unmarshal((*rawMount)(m)); err != nil {
 		log.Error().Err(err).Msg("failed to decode yaml")
 		return err
 	}
@@ -133,7 +68,10 @@ func (m *AbsentMount) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // Ensure - ensure mount is setup
-// TODO should probably mark fstab as managed by govern
+// TODO
+//
+//	should probably mark fstab as managed by govern
+//	create mountpoint if it doesn't exist
 func (m *Mount) Ensure(pretend bool) error {
 	exists, err := m.Exists()
 	if err != nil {
@@ -155,14 +93,9 @@ func (m *Mount) Ensure(pretend bool) error {
 		if exists {
 			log.Debug().Msgf("mount already setup: %s (%s)", m.Spec, m.MountPoint)
 		} else {
-			// TODO make the d
+			// TODO make the dir
 			// this is the only spot we actually have to do anything other than log
 			log.Debug().Msgf("mount being setup: %s (%s)", m.Spec, m.MountPoint)
-			// vers, err := p.Install()
-			// if err != nil {
-			// log.Fatal().Err(err).Msgf("Failed to pkg.Install(): %#v", p)
-			// }
-			// log.Debug().Msgf("Package installed with version: %s", vers)
 			fstabLine := fmt.Sprintf("%s\t%s\t%s\t%s\t%d %d\n", m.Spec, m.MountPoint, m.Type, m.Options, m.Freq, m.Pass)
 			f, err := os.OpenFile("/etc/fstab", os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {

@@ -41,12 +41,10 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // Package - package info
@@ -62,46 +60,18 @@ type Package struct {
 }
 
 // UnmarshalYAML - This fills in default values if they aren't specified
-func (p *Package) UnmarshalYAML(value *yaml.Node) error {
+func (p *Package) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// defaults
 	p.Installed = true
 	p.Version = ""
-	var err error // for use in the switch below
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML Package")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("pkg unmarshal")
-		switch node.Value {
-		case "name":
-			p.Name = value.Content[i+1].Value
-			if p.Name == "" {
-				return nil
-			}
-		case "version":
-			p.Version = value.Content[i+1].Value
-		case "installed":
-			p.Installed, err = strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Error().Err(err).Msg("can't parse installed field")
-				return err
-			}
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				p.Before = append(p.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				p.After = append(p.After, j.Value)
-			}
-		}
+	type rawPackage Package
+	if err := unmarshal((*rawPackage)(p)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 
 	log.Trace().Interface("pkg", p).Msg("what's in the box?!?!")
-	// *p = *pkg
 
 	return nil
 }

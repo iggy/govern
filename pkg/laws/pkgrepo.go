@@ -41,7 +41,6 @@ import (
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // PackageRepo describes a package repository
@@ -51,49 +50,18 @@ type PackageRepo struct {
 	Contents string // the repo URL usually
 	// CommonFields
 	Name   string // unique identifier, not used in the actual repo
+	State  string // "present" or "absent" - set by parser based on yaml structure
 	Before []string
 	After  []string
 }
 
 // UnmarshalYAML implements the Unmarshaler interface
-func (r *PackageRepo) UnmarshalYAML(value *yaml.Node) error {
-	// var err error // for use in the switch below
-
-	// repo := &PackageRepo{}
-	// repo.Present = true
-
-	log.Trace().Interface("Node", value).Msg("PackageRepo UnmarshalYAML")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
+func (r *PackageRepo) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type rawPackageRepo PackageRepo
+	if err := unmarshal((*rawPackageRepo)(r)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		case "name":
-			r.Name = value.Content[i+1].Value
-		case "key":
-			r.Key = value.Content[i+1].Value
-		case "contents":
-			r.Contents = value.Content[i+1].Value
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				r.Before = append(r.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				r.After = append(r.After, j.Value)
-			}
-			// case "present":
-			// 	r.Present, err = strconv.ParseBool(value.Content[i+1].Value)
-			// 	if err != nil {
-			// 		log.Error().Err(err).Msg("can't parse installed field")
-			// 		return err
-			// 	}
-		}
-	}
-
-	// *r = *repo
 	return nil
 }
 

@@ -30,12 +30,9 @@
 package laws
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 
 	docker "github.com/fsouza/go-dockerclient"
-	"gopkg.in/yaml.v3"
 
 	"github.com/rs/zerolog/log"
 )
@@ -80,48 +77,16 @@ type Container struct {
 }
 
 // UnmarshalYAML - This fills in default values if they aren't specified
-func (c *Container) UnmarshalYAML(value *yaml.Node) error {
+func (c *Container) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// set default values
 	c.Running = true
 	c.Labels = map[string]string{"StartedBy": "Govern"}
 	c.Privileged = false
-	var err error // for use in the switch below
 
-	log.Trace().Interface("Node", value).Interface("node type", value.Content).Msg("Container UnmarshalYAML")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		case "name":
-			log.Trace().Str("key", value.Content[i].Value).Str("value", value.Content[i+1].Value).Msg("name yaml tag")
-			c.Name = value.Content[i+1].Value
-			if c.Name == "" {
-				return nil
-			}
-		case "image":
-			c.Image = value.Content[i+1].Value
-		case "running":
-			c.Running, err = strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Error().Err(err).Msg("can't parse running field")
-				return err
-			}
-		case "labels":
-			// for l := range node.
-			log.Trace().Interface("node", node).Msg("labels")
-
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				c.Before = append(c.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				c.After = append(c.After, j.Value)
-			}
-		}
+	type rawContainer Container
+	if err := unmarshal((*rawContainer)(c)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 
 	return nil
