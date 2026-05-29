@@ -90,21 +90,7 @@ type RetryOpts struct {
 
 // Laws - describe the state of the system
 // TODO should really just turn this into a list of `Law`
-//
-//	type Laws struct {
-//		Users        []User
-//		Groups       []Group
-//		Packages     []Package
-//		PackageRepos []PackageRepo
-//		Containers   []Container
-//		Scripts      []Script
-//		Files        FileTemplate
-//		Mounts       []Mount
-//		Services     []Service
-//	}
-//
-// type Laws2 map[string]interface{}
-type Laws3 struct {
+type Laws struct {
 	Users struct {
 		Present []*User
 	}
@@ -143,97 +129,8 @@ type Laws3 struct {
 	} `yaml:"ssh"`
 }
 
-// type Laws2[T comparable] map[T]struct {
-// Laws []Law
-// }
-
-// func NewLaws[T comparable]() Laws2[T] {
-// 	return make(Laws2[T])
-// }
-
 type Law interface {
 	// User | Group | Package | Container | Script | FileTemplate | FileInsert | FileChange | Mount | Service
 
 	Ensure(bool) error
 }
-
-// ProcessFile - process a yaml file
-// func ProcessFile(lawsFile string, pretend bool) error {
-// 	laws := &Laws{}
-// 	log.Trace().Interface("laws-pre", laws).Msg("laws before being parsed")
-// 	log.Debug().Msgf("Processing file: %s", lawsFile)
-
-// 	// setup templating
-// 	var lawsWr bytes.Buffer
-// 	funcMap := sprig.TxtFuncMap()
-// 	tmpl := template.Must(template.New(filepath.Base(lawsFile)).Funcs(funcMap).ParseFiles(lawsFile))
-// 	log.Trace().Interface("tmpl", tmpl).Msg("what is tmpl?")
-// 	log.Trace().Interface("tmpls", tmpl.Templates()).Msg("what tmpls?")
-// 	eerr := tmpl.Execute(&lawsWr, map[string]interface{}{"facts": facts.Facts}) // TODO pass more stuff to templates
-// 	rendered := lawsWr.Bytes()
-// 	if eerr != nil {
-// 		log.Warn().Err(eerr).Msgf("Failed to execute tmpl: %v", rendered)
-// 		return eerr
-// 	}
-// 	log.Trace().Bytes("rendered", rendered).Msg("")
-
-// 	err := yaml.Unmarshal(rendered, laws)
-// 	if err != nil {
-// 		log.Warn().Err(err).Msg("Error loading YAML")
-// 		return err
-// 	}
-
-// 	log.Trace().Interface("laws", laws).Msg("")
-// 	// TODO these are in a funky order right now to cope with the lack of actual dependencies
-// 	for _, group := range laws.Groups {
-// 		err = group.Ensure(pretend)
-// 		if err != nil {
-// 			log.Warn().Err(err).Msg("could not ensure group")
-// 			return err
-// 		}
-// 	}
-// 	for _, user := range laws.Users {
-// 		err = user.Ensure(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	for _, pkg := range laws.Packages {
-// 		err = pkg.Ensure(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 	}
-// 	for _, cntr := range laws.Containers {
-// 		err = cntr.Ensure(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	// for _, file := range laws.Files.FileTemplate {
-// 	// 	err = file.Ensure(pretend)
-// 	// 	if err != nil {
-// 	// 		return err
-// 	// 	}
-// 	// }
-// 	for _, mount := range laws.Mounts {
-// 		err = mount.Ensure(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	for _, script := range laws.Scripts {
-// 		err = script.Run(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	for _, service := range laws.Services {
-// 		err = service.Ensure(pretend)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return nil
-// }
