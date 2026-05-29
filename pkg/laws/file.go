@@ -38,12 +38,10 @@ package laws
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -450,11 +448,40 @@ func (f *FileLink) Ensure(pretend bool) error {
 	if pretend {
 		fl.Info().Str("target", f.Target).Msg("would link")
 	} else {
-		// TODO check if target exists and is a symlink
-		err := os.Symlink(f.Target, f.Name)
+		// Check if link already exists
+		linkInfo, err := os.Lstat(f.Name)
+		if err == nil {
+			// File exists, check if it's already the correct symlink
+			if linkInfo.Mode()&os.ModeSymlink != 0 {
+				existingTarget, err := os.Readlink(f.Name)
+				if err != nil {
+					fl.Error().Err(err).Msg("failed to read existing symlink")
+					return err
+				}
+				if existingTarget == f.Target {
+					fl.Debug().Str("target", f.Target).Msg("symlink already correct")
+					return nil
+				}
+				// Symlink exists but points to wrong target
+				fl.Warn().Str("existing_target", existingTarget).Str("desired_target", f.Target).Msg("symlink exists with different target, skipping")
+				return nil
+			} else {
+				// Destination exists but is not a symlink
+				fl.Warn().Msg("destination exists but is not a symlink, skipping")
+				return nil
+			}
+		} else if !os.IsNotExist(err) {
+			fl.Error().Err(err).Msg("failed to check if link exists")
+			return err
+		}
+
+		// Create the symlink
+		err = os.Symlink(f.Target, f.Name)
 		if err != nil {
 			fl.Error().Err(err).Str("target", f.Target).Msg("failed to symlink")
+			return err
 		}
+		fl.Info().Str("target", f.Target).Msg("symlink created")
 	}
 	return nil
 }
