@@ -13,232 +13,175 @@ import (
 	"github.com/iggy/govern/pkg/mesh"
 )
 
+// Shared targeting flags. A govern CLI invocation always connects to the LOCAL
+// node's control socket; the local node then fans the request out across the
+// mesh according to the selected target.
 var (
-	meshStatusNode string
+	meshControl string // local control socket address
+
+	meshTargetAll   bool     // broadcast to every node
+	meshTargetHosts []string // broadcast, but only these hostnames act
+	meshTargetPeers []string // targeted RPC to these specific peer IDs
+	meshTimeout     int      // seconds to wait for results
 )
+
+// addTargetFlags wires the common targeting flags onto a command.
+func addTargetFlags(c *cobra.Command) {
+	c.Flags().StringVar(&meshControl, "control", "127.0.0.1:8008", "Local node control socket (host:port)")
+	c.Flags().BoolVar(&meshTargetAll, "all", false, "Apply to all nodes in the mesh (broadcast)")
+	c.Flags().StringSliceVar(&meshTargetHosts, "target", nil, "Broadcast but only act on these hostnames")
+	c.Flags().StringSliceVar(&meshTargetPeers, "peer", nil, "Send directly to these peer IDs (targeted RPC)")
+	c.Flags().IntVar(&meshTimeout, "timeout", 30, "Seconds to wait for results")
+}
+
+func meshClient() *mesh.Client {
+	return mesh.NewClient(fmt.Sprintf("http://%s", meshControl), log.Logger)
+}
+
+func printJSON(v interface{}) {
+	out, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to marshal output")
+	}
+	fmt.Println(string(out))
+}
+
+// runCommand dispatches a built Command according to the targeting flags:
+//   - --peer  → targeted RPC (Dispatch) to specific peers
+//   - --all / --target → broadcast and collect
+//   - neither → run on the local node only
+func runCommand(cmdType mesh.CommandType, payload interface{}) {
+	payloadData, err := json.Marshal(payload)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to marshal payload")
+	}
+
+	command := mesh.Command{Type: cmdType, Payload: payloadData}
+
+	timeout := time.Duration(meshTimeout) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+10*time.Second)
+	defer cancel()
+
+	client := meshClient()
+
+	switch {
+	case len(meshTargetPeers) > 0:
+		command.Target.PeerIDs = meshTargetPeers
+		results, err := client.Dispatch(ctx, command, timeout)
+		if err != nil {
+			log.Fatal().Err(err).Msg("dispatch failed")
+		}
+		printJSON(results)
+
+	case meshTargetAll || len(meshTargetHosts) > 0:
+		command.Target = mesh.Target{All: meshTargetAll, Hostnames: meshTargetHosts}
+		results, err := client.Broadcast(ctx, command, timeout)
+		if err != nil {
+			log.Fatal().Err(err).Msg("broadcast failed")
+		}
+		printJSON(results)
+
+	default:
+		result, err := client.ExecuteLocal(ctx, command, timeout)
+		if err != nil {
+			log.Fatal().Err(err).Msg("local execution failed")
+		}
+		printJSON(result)
+	}
+}
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Get mesh status",
-	Long:  `Get the status of the mesh cluster including node information and leadership.`,
+	Long:  `Show the local node's view of the mesh: its identity, addresses, and known peers. There is no leader – this is simply what this node currently knows.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshStatusNode == "" {
-			log.Fatal().Msg("node address is required (use --node)")
-		}
-
-		client := mesh.NewClient(fmt.Sprintf("http://%s", meshStatusNode), log.Logger)
-
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		status, err := client.GetStatus(ctx)
+		status, err := meshClient().GetStatus(ctx)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to get mesh status")
 		}
-
-		output, err := json.MarshalIndent(status, "", "  ")
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal status")
-		}
-
-		fmt.Println(string(output))
+		printJSON(status)
 	},
 }
 
 var nodesCmd = &cobra.Command{
 	Use:   "nodes",
-	Short: "List mesh nodes",
-	Long:  `List all nodes in the mesh cluster.`,
+	Short: "List known mesh peers",
+	Long:  `List the peers the local node has discovered in the mesh.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshStatusNode == "" {
-			log.Fatal().Msg("node address is required (use --node)")
-		}
-
-		client := mesh.NewClient(fmt.Sprintf("http://%s", meshStatusNode), log.Logger)
-
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		nodes, err := client.GetNodes(ctx)
+		nodes, err := meshClient().GetNodes(ctx)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to get mesh nodes")
 		}
-
-		output, err := json.MarshalIndent(nodes, "", "  ")
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal nodes")
-		}
-
-		fmt.Println(string(output))
+		printJSON(nodes)
 	},
 }
 
 var (
-	meshExecNode    string
 	meshExecCommand string
 	meshExecArgs    []string
 	meshExecWorkDir string
 	meshExecEnv     []string
-	meshExecTimeout int
 )
 
 var execCmd = &cobra.Command{
 	Use:   "exec",
-	Short: "Execute command on mesh node",
-	Long:  `Execute a command on a specific mesh node.`,
+	Short: "Execute a command across the mesh",
+	Long: `Execute a shell command. By default it runs on the local node only.
+Use --all to run on every node, --target to restrict to hostnames, or --peer to
+send directly to specific peers.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshExecNode == "" {
-			log.Fatal().Msg("node address is required (use --node)")
-		}
 		if meshExecCommand == "" {
 			log.Fatal().Msg("command is required (use --command)")
 		}
-
 		env := make(map[string]string)
 		for _, e := range meshExecEnv {
-			parts := strings.Split(e, "=")
-			if len(parts) == 2 {
-				env[parts[0]] = parts[1]
+			if k, v, ok := strings.Cut(e, "="); ok {
+				env[k] = v
 			}
 		}
-
-		payload := mesh.ExecPayload{
+		runCommand(mesh.CommandTypeExec, mesh.ExecPayload{
 			Command: meshExecCommand,
 			Args:    meshExecArgs,
 			Env:     env,
 			WorkDir: meshExecWorkDir,
-		}
-
-		payloadData, err := json.Marshal(payload)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal payload")
-		}
-
-		command := mesh.Command{
-			Type:    mesh.CommandTypeExec,
-			Payload: payloadData,
-		}
-
-		client := mesh.NewClient(fmt.Sprintf("http://%s", meshExecNode), log.Logger)
-
-		timeout := time.Duration(meshExecTimeout) * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		result, err := client.ExecuteCommand(ctx, command)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to execute command")
-		}
-
-		output, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal result")
-		}
-
-		fmt.Println(string(output))
+		})
 	},
 }
 
-var (
-	meshFactsNode       string
-	meshFactsCategories []string
-	meshFactsTimeout    int
-)
+var meshFactsCategories []string
 
 var meshFactsCmd = &cobra.Command{
 	Use:   "facts",
-	Short: "Get facts from mesh node",
-	Long:  `Get system facts from a specific mesh node.`,
+	Short: "Query facts across the mesh",
+	Long: `Query system facts. By default it queries the local node only. Use --all,
+--target, or --peer to query other nodes.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshFactsNode == "" {
-			log.Fatal().Msg("node address is required (use --node)")
-		}
-
-		payload := mesh.FactsPayload{
-			Categories: meshFactsCategories,
-		}
-
-		payloadData, err := json.Marshal(payload)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal payload")
-		}
-
-		command := mesh.Command{
-			Type:    mesh.CommandTypeFacts,
-			Payload: payloadData,
-		}
-
-		client := mesh.NewClient(fmt.Sprintf("http://%s", meshFactsNode), log.Logger)
-
-		timeout := time.Duration(meshFactsTimeout) * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		result, err := client.ExecuteCommand(ctx, command)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to get facts")
-		}
-
-		output, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal result")
-		}
-
-		fmt.Println(string(output))
+		runCommand(mesh.CommandTypeFacts, mesh.FactsPayload{Categories: meshFactsCategories})
 	},
 }
 
 var (
-	meshApplyNode    string
-	meshApplyFiles   []string
-	meshApplyDryRun  bool
-	meshApplyTimeout int
+	meshApplyFiles  []string
+	meshApplyDryRun bool
 )
 
 var meshApplyCmd = &cobra.Command{
 	Use:   "apply",
-	Short: "Apply laws on mesh node",
-	Long:  `Apply governance laws on a specific mesh node.`,
+	Short: "Apply laws across the mesh",
+	Long: `Apply governance laws. By default it applies on the local node only. Use
+--all, --target, or --peer to apply on other nodes.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if meshApplyNode == "" {
-			log.Fatal().Msg("node address is required (use --node)")
-		}
 		if len(meshApplyFiles) == 0 {
 			log.Fatal().Msg("at least one law file is required (use --files)")
 		}
-
-		payload := mesh.ApplyLawsPayload{
+		runCommand(mesh.CommandTypeApplyLaws, mesh.ApplyLawsPayload{
 			LawFiles: meshApplyFiles,
 			DryRun:   meshApplyDryRun,
-		}
-
-		payloadData, err := json.Marshal(payload)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal payload")
-		}
-
-		command := mesh.Command{
-			Type:    mesh.CommandTypeApplyLaws,
-			Payload: payloadData,
-		}
-
-		client := mesh.NewClient(fmt.Sprintf("http://%s", meshApplyNode), log.Logger)
-
-		timeout := time.Duration(meshApplyTimeout) * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		result, err := client.ExecuteCommand(ctx, command)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to apply laws")
-		}
-
-		output, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to marshal result")
-		}
-
-		fmt.Println(string(output))
+		})
 	},
 }
 
@@ -249,35 +192,25 @@ func init() {
 	meshCmd.AddCommand(meshFactsCmd)
 	meshCmd.AddCommand(meshApplyCmd)
 
-	// Status command flags
-	statusCmd.Flags().StringVar(&meshStatusNode, "node", "", "HTTP address of mesh node (host:port)")
-	statusCmd.MarkFlagRequired("node")
+	// status / nodes only need to reach the local control socket.
+	statusCmd.Flags().StringVar(&meshControl, "control", "127.0.0.1:8008", "Local node control socket (host:port)")
+	nodesCmd.Flags().StringVar(&meshControl, "control", "127.0.0.1:8008", "Local node control socket (host:port)")
 
-	// Nodes command flags
-	nodesCmd.Flags().StringVar(&meshStatusNode, "node", "", "HTTP address of mesh node (host:port)")
-	nodesCmd.MarkFlagRequired("node")
-
-	// Exec command flags
-	execCmd.Flags().StringVar(&meshExecNode, "node", "", "HTTP address of mesh node (host:port)")
+	// exec
+	addTargetFlags(execCmd)
 	execCmd.Flags().StringVar(&meshExecCommand, "command", "", "Command to execute")
 	execCmd.Flags().StringSliceVar(&meshExecArgs, "args", nil, "Command arguments")
 	execCmd.Flags().StringVar(&meshExecWorkDir, "workdir", "", "Working directory")
 	execCmd.Flags().StringSliceVar(&meshExecEnv, "env", nil, "Environment variables (KEY=VALUE)")
-	execCmd.Flags().IntVar(&meshExecTimeout, "timeout", 30, "Timeout in seconds")
-	execCmd.MarkFlagRequired("node")
 	execCmd.MarkFlagRequired("command")
 
-	// Facts command flags
-	meshFactsCmd.Flags().StringVar(&meshFactsNode, "node", "", "HTTP address of mesh node (host:port)")
+	// facts
+	addTargetFlags(meshFactsCmd)
 	meshFactsCmd.Flags().StringSliceVar(&meshFactsCategories, "categories", nil, "Fact categories to retrieve")
-	meshFactsCmd.Flags().IntVar(&meshFactsTimeout, "timeout", 30, "Timeout in seconds")
-	meshFactsCmd.MarkFlagRequired("node")
 
-	// Apply command flags
-	meshApplyCmd.Flags().StringVar(&meshApplyNode, "node", "", "HTTP address of mesh node (host:port)")
+	// apply
+	addTargetFlags(meshApplyCmd)
 	meshApplyCmd.Flags().StringSliceVar(&meshApplyFiles, "files", nil, "Law files to apply")
 	meshApplyCmd.Flags().BoolVar(&meshApplyDryRun, "dry-run", false, "Perform dry run without applying changes")
-	meshApplyCmd.Flags().IntVar(&meshApplyTimeout, "timeout", 60, "Timeout in seconds")
-	meshApplyCmd.MarkFlagRequired("node")
 	meshApplyCmd.MarkFlagRequired("files")
 }
