@@ -47,7 +47,6 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // // File represents a file in the filesystem
@@ -78,7 +77,7 @@ type FileTemplate struct {
 	// Group        string      // group/gid owner of the file
 	// Mode         fs.FileMode // file mode TODO maybe default to 400?
 	Text         string // text template
-	TemplatePath string // path to a file to use instead of Text (unimpl)
+	TemplatePath string `yaml:"template_path"` // path to a template file, relative to laws dir or absolute
 	// Backup       bool        // whether to backup the file before changing
 
 	// CommonFields
@@ -129,75 +128,14 @@ type FileLink struct {
 //     return nil
 // }
 
-func (f *FileTemplate) UnmarshalYAML(value *yaml.Node) error {
-	// f.LineNum = -1
-
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML fileinsert")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		// common fields
-		case "name":
-			f.Name = value.Content[i+1].Value
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				f.Before = append(f.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				f.After = append(f.After, j.Value)
-			}
-		case "make_dir":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse make_dir")
-			}
-			f.MakeDir = b
-		case "user":
-			f.User = value.Content[i+1].Value
-		case "group":
-			f.Group = value.Content[i+1].Value
-		case "mode":
-			// 0644 (etc) is octal
-			fm, err := strconv.ParseInt(value.Content[i+1].Value, 8, 32)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to parse mode")
-			}
-			f.Mode = os.FileMode(fm)
-			// f.Mode, _ = int(value.Content[i+1].Value)
-		case "backup":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse backup")
-			}
-			f.Backup = b
-		// case "after_line":
-		// 	f.AfterLine = value.Content[i+1].Value
-		// case "before_line":
-		// 	f.BeforeLine = value.Content[i+1].Value
-		// case "line_num":
-		// 	f.LineNum, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 64)
-		case "text":
-			f.Text = value.Content[i+1].Value
-
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-		}
+func (f *FileTemplate) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type rawFileTemplate FileTemplate
+	if err := unmarshal((*rawFileTemplate)(f)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 	log.Trace().Interface("f", f).Msg("what's in the box?!?!")
-
 	return nil
-
 }
 
 // Ensure ensures that the file exists with the correct contents
@@ -206,6 +144,12 @@ func (f *FileTemplate) Ensure(pretend bool) error {
 
 	if f.Name == "" {
 		return fmt.Errorf("file template name not set")
+	}
+
+	// TemplatePath is resolved into Text during ParseFiles; if it's still set
+	// but Text is empty, parsing was bypassed or the resolution failed.
+	if f.TemplatePath != "" && f.Text == "" {
+		return fmt.Errorf("file template %q: template_path %q was not resolved; ensure ParseFiles ran successfully", f.Name, f.TemplatePath)
 	}
 
 	if pretend {
@@ -280,70 +224,16 @@ func (f *FileTemplate) Exists() bool {
 	return false
 }
 
-func (f *FileInsert) UnmarshalYAML(value *yaml.Node) error {
+func (f *FileInsert) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	f.LineNum = -1
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML fileinsert")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		// common fields
-		case "name":
-			f.Name = value.Content[i+1].Value
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				f.Before = append(f.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				f.After = append(f.After, j.Value)
-			}
-		case "make_dir":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse make_dir")
-			}
-			f.MakeDir = b
-		case "user":
-			f.User = value.Content[i+1].Value
-		case "group":
-			f.Group = value.Content[i+1].Value
-		case "mode":
-			// TODO
-			// f.Mode, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 32)
-		case "backup":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse backup")
-			}
-			f.Backup = b
-		case "after_line":
-			f.AfterLine = value.Content[i+1].Value
-		case "before_line":
-			f.BeforeLine = value.Content[i+1].Value
-		case "line_num":
-			f.LineNum, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 64)
-		case "text":
-			f.Text = value.Content[i+1].Value
-
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-		}
+	type rawFileInsert FileInsert
+	if err := unmarshal((*rawFileInsert)(f)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 	log.Trace().Interface("f", f).Msg("what's in the box?!?!")
-
 	return nil
-
 }
 
 func (f *FileInsert) Ensure(pretend bool) error {
@@ -464,74 +354,17 @@ func (f *FileInsert) Ensure(pretend bool) error {
 	return nil
 }
 
-func (f *FileChange) UnmarshalYAML(value *yaml.Node) error {
-	// f.LineNum = -1
+func (f *FileChange) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// we set the default to a random string that should never appear in a file
 	f.Done = "8df59722fca35a8de040c0490e7add0cab6b0751a4c0dc15a066ae174b63f274"
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML fileinsert")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		// common fields
-		case "name":
-			f.Name = value.Content[i+1].Value
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				f.Before = append(f.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				f.After = append(f.After, j.Value)
-			}
-		case "make_dir":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse make_dir")
-			}
-			f.MakeDir = b
-		case "user":
-			f.User = value.Content[i+1].Value
-		case "group":
-			f.Group = value.Content[i+1].Value
-		case "mode":
-			// TODO
-			// f.Mode, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 32)
-		case "backup":
-			b, err := strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Warn().Str("key", node.Value).Str("val", value.Content[i+1].Value).Msg("failed to parse backup")
-			}
-			f.Backup = b
-		case "search":
-			f.Search = value.Content[i+1].Value
-		case "replace":
-			f.Replace = value.Content[i+1].Value
-		case "done":
-			f.Done = value.Content[i+1].Value
-
-			// case "line_num":
-			// 	f.LineNum, _ = strconv.ParseInt(value.Content[i+1].Value, 10, 64)
-			// case "text":
-			// 	f.Text = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-			// case "":
-			// m. = value.Content[i+1].Value
-		}
+	type rawFileChange FileChange
+	if err := unmarshal((*rawFileChange)(f)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 	log.Trace().Interface("f", f).Msg("what's in the box?!?!")
-
 	return nil
-
 }
 
 // TODO handle \r's
@@ -602,11 +435,10 @@ func (f *FileChange) Ensure(pretend bool) error {
 	return nil
 }
 
-func (f *FileLink) UnmarshalYAML(value *yaml.Node) error {
+func (f *FileLink) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	f.Symbolic = true
 	type rawFileLink FileLink
-	err := value.Decode((*rawFileLink)(f)) // this goes into an infinite loop
-	if err != nil && err != io.EOF {
+	if err := unmarshal((*rawFileLink)(f)); err != nil {
 		log.Error().Err(err).Msg("failed to decode yaml")
 		return err
 	}

@@ -42,7 +42,6 @@ import (
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // User - a user the system should have
@@ -67,61 +66,14 @@ type User struct {
 }
 
 // UnmarshalYAML - This fills in default values if they aren't specified
-func (u *User) UnmarshalYAML(value *yaml.Node) error {
-	var err error      // for use in the switch below
+func (u *User) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	u.UID = ^uint64(0) // effectively -1, but go does math different than C
 	u.GID = ^uint64(0) // see https://blog.golang.org/constants
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML User")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("user unmarshal")
-		switch node.Value {
-		case "name":
-			u.Name = value.Content[i+1].Value
-		case "uid":
-			u.UID, _ = strconv.ParseUint(value.Content[i+1].Value, 10, 64)
-		case "gid":
-			u.GID, _ = strconv.ParseUint(value.Content[i+1].Value, 10, 64)
-		case "fullname":
-			u.Fullname = value.Content[i+1].Value
-		case "password":
-			u.Password = value.Content[i+1].Value
-		case "homedir":
-			u.HomeDir = value.Content[i+1].Value
-		case "shell":
-			u.Shell = value.Content[i+1].Value
-		case "system":
-			u.System, err = strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Error().Err(err).Msg("can't parse system field")
-				return err
-			}
-		case "exists":
-			u.Exists, err = strconv.ParseBool(value.Content[i+1].Value)
-			if err != nil {
-				log.Error().Err(err).Msg("can't parse exists field")
-				return err
-			}
-		case "extra_groups":
-			for _, g := range value.Content[i+1].Content {
-				u.ExtraGroups = append(u.ExtraGroups, g.Value)
-			}
-		case "optional_groups":
-			for _, g := range value.Content[i+1].Content {
-				u.OptionalGroups = append(u.OptionalGroups, g.Value)
-			}
-		// common fields
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				u.After = append(u.After, j.Value)
-			}
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				u.Before = append(u.Before, j.Value)
-			}
-		}
+
+	type rawUser User
+	if err := unmarshal((*rawUser)(u)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 	log.Trace().Interface("user", u).Msg("what's in the box?!?!")
 

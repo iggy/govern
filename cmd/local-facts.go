@@ -32,10 +32,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/goccy/go-yaml"
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // factsCmd represents the facts command

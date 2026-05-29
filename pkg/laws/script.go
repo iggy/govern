@@ -31,7 +31,6 @@ package laws
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -44,7 +43,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // Script is a script to run
@@ -64,48 +62,13 @@ type Script struct {
 }
 
 // UnmarshalYAML implements the Unmarshaler interface.
-func (s *Script) UnmarshalYAML(value *yaml.Node) error {
+func (s *Script) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	s.Shell = "/bin/sh"
-	// TODO
-	//  env should match parent shell by default and then be added to
-	//
 
-	log.Trace().Interface("Node", value).Msg("UnmarshalYAML Script")
-	if value.Tag != "!!map" {
-		return fmt.Errorf("unable to unmarshal yaml: value not map (%s)", value.Tag)
-	}
-
-	for i, node := range value.Content {
-		log.Trace().Interface("node1", node).Msg("")
-		switch node.Value {
-		case "name":
-			s.Name = value.Content[i+1].Value
-		case "shell":
-			s.Shell = value.Content[i+1].Value
-		case "script":
-			s.Script = value.Content[i+1].Value
-		case "creates":
-			log.Trace().Interface("node2", value.Content[i+1].Content).Msg("")
-			for _, v := range value.Content[i+1].Content {
-				s.Creates = append(s.Creates, v.Value)
-			}
-		case "env":
-			log.Trace().Interface("node2", value.Content[i+1].Content).Msg("")
-		case "args":
-			log.Trace().Interface("node2", value.Content[i+1].Content).Msg("")
-		case "working_dir":
-			s.WorkingDir = value.Content[i+1].Value
-		case "run_as":
-			s.RunAs = value.Content[i+1].Value
-		case "before":
-			for _, j := range value.Content[i+1].Content {
-				s.Before = append(s.Before, j.Value)
-			}
-		case "after":
-			for _, j := range value.Content[i+1].Content {
-				s.After = append(s.After, j.Value)
-			}
-		}
+	type rawScript Script
+	if err := unmarshal((*rawScript)(s)); err != nil {
+		log.Error().Err(err).Msg("failed to decode yaml")
+		return err
 	}
 
 	return nil

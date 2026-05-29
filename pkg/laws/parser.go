@@ -11,10 +11,10 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Masterminds/sprig/v3"
+	"github.com/goccy/go-yaml"
 	"github.com/hmdsefi/gograph"
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // dep graph node that represents each law parsed from the laws yaml files

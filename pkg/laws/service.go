@@ -33,12 +33,10 @@ package laws
 
 import (
 	"bytes"
-	"io"
 	"os/exec"
 
 	"github.com/iggy/govern/pkg/facts"
 	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
 )
 
 // Service - package info
@@ -54,16 +52,13 @@ type Service struct {
 	After  []string
 }
 
-func (s *Service) UnmarshalYAML(value *yaml.Node) error {
-	// log.Logger = log.With().Str("unmarshalyaml", "mount").Logger()
-
+func (s *Service) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	s.State = "started"
 	s.Persistent = true
 	s.RunLevel = "default"
 
 	type raw Service
-	err := value.Decode((*raw)(s)) // this goes into an infinite loop
-	if err != nil && err != io.EOF {
+	if err := unmarshal((*raw)(s)); err != nil {
 		log.Error().Err(err).Msg("failed to decode yaml")
 		return err
 	}
@@ -143,12 +138,13 @@ func (s *Service) Ensure(pretend bool) error {
 				log.Info().Str("name", s.Name).Str("current state", cstate).Str("desired state", s.State).Msg("starting service")
 				switch facts.Facts.Distro.Family {
 				case "alpine":
+					log.Debug().Msg("Starting service on Alpine")
 					cmd := exec.Command("rc-service", s.Name, "start")
 					var out bytes.Buffer
 					cmd.Stdout = &out
 					err := cmd.Run()
 					if err != nil {
-						log.Fatal().Err(err).Msg("Failed to cmd.Run rc-service start")
+						log.Error().Err(err).Msg("Failed to cmd.Run rc-service start")
 					}
 					log.Debug().Str("stdout", out.String())
 
@@ -158,7 +154,7 @@ func (s *Service) Ensure(pretend bool) error {
 						cmd.Stdout = &out
 						err := cmd.Run()
 						if err != nil {
-							log.Fatal().Err(err).Str("service", s.Name).Msg("Failed to cmd.Run rc-update add")
+							log.Error().Err(err).Str("service", s.Name).Msg("Failed to cmd.Run rc-update add")
 						}
 					}
 				case "debian":
@@ -177,7 +173,7 @@ func (s *Service) Ensure(pretend bool) error {
 				cmd.Stdout = &out
 				err := cmd.Run()
 				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to cmd.Run rc-update add")
+					log.Error().Err(err).Msg("Failed to cmd.Run rc-update add")
 				}
 				log.Debug().Str("stdout", out.String())
 			case "debian":
