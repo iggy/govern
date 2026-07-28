@@ -8,7 +8,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.13.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
-	github.com/hmdsefi/gograph v0.7.0
+	github.com/hmdsefi/gograph v0.7.1
 	github.com/jaypipes/ghw v0.24.0
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-kad-dht v0.40.0
